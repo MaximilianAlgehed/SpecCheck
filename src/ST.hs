@@ -107,6 +107,8 @@ instance (Erlang t) => Erlang (Protocol t) where
     fromErlang (ErlAtom "chooseLeft")         = ChooseLeft
     fromErlang (ErlAtom "chooseRight")        = ChooseRight
 
+-- Buggy, does not yet implement
+-- being killed. Which means re-running tests is a bit fiddly.
 runErlang :: (Erlang t, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
