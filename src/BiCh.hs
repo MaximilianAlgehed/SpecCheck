@@ -6,8 +6,7 @@ import Control.Concurrent.Chan
 
 -- | Protocol
 data Protocol t = Pure t
-                | ChooseLeft
-                | ChooseRight
+                | Choice String 
                 deriving (Show,Functor)
 
 data Interaction t = Got t | Sent t deriving (Show, Functor)

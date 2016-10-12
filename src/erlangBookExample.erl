@@ -17,15 +17,12 @@ continue(I, XS) ->
             true  -> [I|XS]
           end,
     receive 
-        {_, chooseLeft} -> loop(Lst);
-        {_, chooseRight} -> finish(Lst)
+        {_, {choice, another}} -> loop(Lst);
+        {Hs, {choice, request}} -> Hs ! {pure, Lst}, finish(Lst)
     end.
 
 finish(XS) ->
-    receive 
-        {Hs, {pure, requestBooks}} -> Hs ! {pure, XS}
-    end,
     receive
-        {_, chooseLeft} -> loop(XS);
-        {_, chooseRight} -> exit(done)
+        {_, {choice, another}} -> loop(XS);
+        {_, {choice, done}} -> exit(done)
     end.

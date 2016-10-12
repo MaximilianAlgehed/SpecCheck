@@ -43,15 +43,15 @@ instance (Erlang a) => a :<: ErlType where
 data ST c where
     Send   :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c
     Get    :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
-    Choose :: Gen Choice -> ST c -> ST c -> ST c
-    Branch :: Gen Choice -> ST c -> ST c -> ST c
+    Choose :: Gen Int -> [(String, ST c)] -> ST c
+    Branch :: Gen Int -> [(String, ST c)] -> ST c
     End    :: ST c
 
 dual :: ST a -> ST a
 dual (Send pred cont) = Get pred (dual . cont)
 dual (Get pred cont)  = Send pred (dual . cont)
-dual (Choose gen l r) = Branch gen l r 
-dual (Branch gen l r) = Choose gen l r
+dual (Choose gen cs)  = Branch gen cs 
+dual (Branch gen cs)  = Choose gen cs
 dual End              = End
 
 sessionTest :: (BiChannel ch c)
@@ -74,38 +74,31 @@ sessionTest (Get (_, pred) cont) ch =
                           else
                             return $ fmap (++" "++(show value)) (pred value)
             Nothing    -> return $ Just "Type error!"
-sessionTest (Choose gen l r) ch =
+sessionTest (Choose gen choices) ch =
     do
         choice <- lift $ generate gen
-        case choice of
-            L -> do
-                    tell [Sent ChooseLeft]
-                    lift $ put ch ChooseLeft
-                    sessionTest l ch
-            R -> do
-                    tell [Sent ChooseRight]
-                    lift $ put ch ChooseRight
-                    sessionTest r ch
-sessionTest (Branch _ l r) ch =
+        let (name, cont) = choices!!choice
+        tell [Sent (Choice name)]
+        lift $ put ch (Choice name)
+        sessionTest cont ch
+sessionTest (Branch _ choices) ch =
     do
         choice <- lift $ get ch
         tell [Got choice]
         case choice of
-            ChooseLeft -> do
-                            sessionTest l ch
-            ChooseRight -> do
-                            sessionTest r ch
+            Choice s
+                | s `elem` (map fst choices) -> sessionTest (fromJust (lookup s choices)) ch
+                | otherwise -> return $ Just "Tried to make invalid call!"
+            _ -> return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
 -- | So that we can talk to Erlang!
 instance (Erlang t) => Erlang (Protocol t) where
     toErlang (Pure t)    = ErlTuple [ErlAtom "pure", toErlang t]
-    toErlang ChooseLeft  = ErlAtom "chooseLeft"
-    toErlang ChooseRight = ErlAtom "chooseRight"
+    toErlang (Choice s)  = ErlTuple [ErlAtom "choice", ErlAtom s]
 
-    fromErlang (ErlTuple [ErlAtom "pure", t]) = Pure (fromErlang t)
-    fromErlang (ErlAtom "chooseLeft")         = ChooseLeft
-    fromErlang (ErlAtom "chooseRight")        = ChooseRight
+    fromErlang (ErlTuple [ErlAtom "pure", t])           = Pure (fromErlang t)
+    fromErlang (ErlTuple [ErlAtom "choice", ErlAtom s]) = Choice s
 
 -- Buggy, does not yet implement
 -- being killed. Which means re-running tests is a bit fiddly.
@@ -172,17 +165,15 @@ specCheck impl t = loop 100
                             return ()
 
 printTrace (Got (Pure x))   = "Got ("++(show x)++")"
-printTrace (Got ChooseLeft) = "Branched left"
-printTrace (Got ChooseRight) = "Branched right"
+printTrace (Got (Choice s)) = "Branched "++s
 printTrace (Sent (Pure x))  = "Sent ("++(show x)++")"
-printTrace (Sent ChooseLeft) = "Chose left"
-printTrace (Sent ChooseRight) = "Chose right"
+printTrace (Sent (Choice s)) = "Chose "++s
 
 fromJust (Just x) = x
 
 -- Some generator-predicate pairs
 posNum :: (Ord a, Num a, Arbitrary a) => Predicate a
-posNum = predicate "posNum" (fmap ((\x -> x-1) . abs) arbitrary, (>0))
+posNum = predicate "posNum" (fmap ((+1) . abs) arbitrary, (>0))
 
 is :: (Eq a, Show a) => a -> Predicate a
 is a = predicate ("is "++(show a)) (return a,(a==))
@@ -210,11 +201,11 @@ isPermutation bs = predicate ("isPermutation " ++ (show bs)) (shuffle bs, (((sor
 any :: (Arbitrary a) => Predicate a
 any = (arbitrary, const Nothing)
 
-(<|>) = Choose arbitrary
-infixr 0 <|>
+l <|> r = Choose (oneof [return 0, return 1]) [l, r]
+infixr 1 <|>
 
-(<&>) = Branch arbitrary
-infixr 0 <&>
+l <&> r = Branch (oneof [return 0, return 1]) [l, r]
+infixr 1 <&>
 
 f .- c = f (const c)
 infixr 0 .-
@@ -223,27 +214,18 @@ infixr 0 .-
 bookShop :: ST ErlType
 bookShop = bookShop' ([] :: [Int])
 
-data Request = RequestBooks deriving (Eq, Show)
-
-instance Erlang Request where
-    toErlang _ = ErlAtom "requestBooks"
-
-    fromErlang (ErlAtom "requestBooks") = RequestBooks
-
--- This demonstrates that syntax is an issue :/
--- maybe Koen has some nice ideas for combinators
--- that could make this very pretty indeed
 bookShop' bs = Send posNum $
                \b -> let bs' = b:bs in
-                   (bookShop' bs')
+                   ("another", (bookShop' bs'))
                    <|>
-                   Send (is RequestBooks) $
-                        \i   -> Get (isPermutation bs') $
-                        \bs' -> (bookShop' bs') <|> End
+                   ("request", Get (isPermutation bs') $
+                               \bs' ->
+                   ("another", (bookShop' bs')) <|> ("done", End))
 
 {- The new example from POPL SRC -}
 protocol :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
-protocol = Send validData .- (execActs <&> continue)
+protocol = Send validData .-
+           ("execute", execActs) <&> ("continue", continue)
 
 execActs :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
 execActs =
@@ -252,7 +234,7 @@ execActs =
     continue
 
 continue :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
-continue = protocol <|> End
+continue = ("stayAwake", protocol) <|> ("end", End)
 
 validData = predicate "validData" (sequence $ [arbitrary, arbitrary, arbitrary], \xs -> length (xs :: [Double]) == 3 )
 
