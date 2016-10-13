@@ -3,6 +3,7 @@
              MultiParamTypeClasses,
              FlexibleInstances,
              FlexibleContexts #-}
+module ST where
 import Prelude hiding (any)
 import Test.QuickCheck
 import Data.List hiding (any)
@@ -77,7 +78,7 @@ sessionTest (Get (_, pred) cont) ch =
 sessionTest (Choose gen choices) ch =
     do
         choice <- lift $ generate gen
-        let (name, cont) = choices!!choice
+        let (name, cont) = choices!!(choice `mod` (length choices))
         tell [Sent (Choice name)]
         lift $ put ch (Choice name)
         sessionTest cont ch
@@ -117,12 +118,16 @@ runErlang self mod fun st = specCheck (runfun self) st
                 rpcCall mbox (Short "erl") mod fun []
                 id1 <- forkIO $ erlangLoop ch mbox
                 id2 <- forkIO $ haskellLoop ch mbox
+                waitToBeKilled ch
+                finish mbox id1 id2
                 return ()
 
-        finish pid id1 id2 =
+        finish mbox id1 id2 =
             do
                 killThread id1
                 killThread id2
+                pid <- rpcCall mbox (Short "erl") "erlang" "whereis" [ErlAtom "p"]
+                rpcCall mbox (Short "erl") "erlang" "exit" [pid, ErlAtom "ok"]
 
         erlangLoop ch mbox =
             do
@@ -214,7 +219,7 @@ infixr 0 .-
 bookShop :: ST ErlType
 bookShop = bookShop' ([] :: [Int])
 
-bookShop' bs = Send posNum $
+bookShop' bs = Send any $
                \b -> let bs' = b:bs in
                    ("another", (bookShop' bs'))
                    <|>
