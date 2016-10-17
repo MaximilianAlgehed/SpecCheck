@@ -4,7 +4,9 @@
 main() -> spawn(fun() -> f() end).
 
 f() -> register(p, self()),
-       loop([]).
+       receive 
+            Hs -> loop([])
+       end.
 
 loop(XS) ->
     receive 

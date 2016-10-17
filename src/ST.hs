@@ -41,6 +41,9 @@ instance (Erlang a) => a :<: ErlType where
     embed = toErlang
     extract = Just . fromErlang
 
+erlBool True = ErlAtom "true"
+erlBool False = ErlAtom "false"
+
 data ST c where
     Send   :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c
     Get    :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
@@ -51,30 +54,35 @@ data ST c where
 dual :: ST a -> ST a
 dual (Send pred cont) = Get pred (dual . cont)
 dual (Get pred cont)  = Send pred (dual . cont)
-dual (Choose gen cs)  = Branch gen cs 
-dual (Branch gen cs)  = Choose gen cs
+dual (Choose gen cs)  = Branch gen (map (\(s,t) -> (s, dual t)) cs)
+dual (Branch gen cs)  = Choose gen (map (\(s,t) -> (s, dual t)) cs)
 dual End              = End
 
-sessionTest :: (BiChannel ch c)
+sessionTest :: (Show c, BiChannel ch c)
             => ST c
             -> ch (Protocol c)
-            -> WriterT (Log c) IO (Maybe String)
+            -> WriterT (Log String) IO (Maybe String)
 sessionTest (Send (gen, _) cont) ch =
     do
         value <- lift $ generate gen
         lift $ put ch $ Pure (embed value)
-        tell [Sent (Pure (embed value))]
+        tell [Sent (Pure (show value))]
         sessionTest (cont value) ch
 sessionTest (Get (_, pred) cont) ch =
     do
         Pure mv <- lift $ get ch
-        tell [Got (Pure mv)]
         case extract mv of
             Just value -> if pred value == Nothing then
-                            sessionTest (cont value) ch
+                            do
+                                tell [Got (Pure (show value))]
+                                sessionTest (cont value) ch
                           else
-                            return $ fmap (++" "++(show value)) (pred value)
-            Nothing    -> return $ Just "Type error!"
+                            do
+                                tell [Got (Pure (show value))]
+                                return $ fmap (++" "++(show value)) (pred value)
+            Nothing    -> do 
+                            tell [Got (Pure (show mv))]
+                            return $ Just "Type error!"
 sessionTest (Choose gen choices) ch =
     do
         choice <- lift $ generate gen
@@ -85,12 +93,17 @@ sessionTest (Choose gen choices) ch =
 sessionTest (Branch _ choices) ch =
     do
         choice <- lift $ get ch
-        tell [Got choice]
         case choice of
             Choice s
-                | s `elem` (map fst choices) -> sessionTest (fromJust (lookup s choices)) ch
-                | otherwise -> return $ Just "Tried to make invalid call!"
-            _ -> return $ Just "Type error!"
+                | s `elem` (map fst choices) -> do
+                                                    tell [Got (Choice s)]
+                                                    sessionTest (fromJust (lookup s choices)) ch
+                | otherwise -> do
+                                tell [Got (Choice s)]
+                                return $ Just "Tried to make invalid call!"
+            _ -> do
+                    tell [Got (Pure (show choice))]
+                    return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
 -- | So that we can talk to Erlang!
@@ -115,7 +128,9 @@ runErlang self mod fun st = specCheck (runfun self) st
         runfun self ch =
             do
                 mbox <- createMBox self
+                let pid = mboxSelf mbox
                 rpcCall mbox (Short "erl") mod fun []
+                mboxSend mbox (Short "erl") (Right "p") (mboxSelf mbox)
                 id1 <- forkIO $ erlangLoop ch mbox
                 id2 <- forkIO $ haskellLoop ch mbox
                 waitToBeKilled ch
@@ -169,9 +184,9 @@ specCheck impl t = loop 100
                             putStrLn "---"
                             return ()
 
-printTrace (Got (Pure x))   = "Got ("++(show x)++")"
+printTrace (Got (Pure x))   = "Got ("++x++")"
 printTrace (Got (Choice s)) = "Branched "++s
-printTrace (Sent (Pure x))  = "Sent ("++(show x)++")"
+printTrace (Sent (Pure x))  = "Sent ("++x++")"
 printTrace (Sent (Choice s)) = "Chose "++s
 
 fromJust (Just x) = x
@@ -185,6 +200,9 @@ is a = predicate ("is "++(show a)) (return a,(a==))
 
 isPermutation :: (Ord a, Show a) => [a] -> Predicate [a]
 isPermutation bs = predicate ("isPermutation " ++ (show bs)) (shuffle bs, (((sort bs) ==) . sort))
+
+inRange :: (Ord a, Show a, Arbitrary a) => (a, a) -> Predicate a
+inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x -> x >= l && x <= h), (\x -> x >= l && x <= h))
 
 (|||) :: Predicate a -> Predicate a -> Predicate a
 (lg, l) ||| (rg, r) = (oneof [lg, rg], disj l r)
@@ -239,11 +257,18 @@ execActs =
     continue
 
 continue :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
-continue = ("stayAwake", protocol) <|> ("end", End)
+continue = ("stayAwake", protocol) <|> ("stop", End)
 
 validData = predicate "validData" (sequence $ [arbitrary, arbitrary, arbitrary], \xs -> length (xs :: [Double]) == 3 )
 
 data Action = Output Int Int | Input Int
+
+instance Erlang Action where
+    toErlang (Output i j) = ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]
+    toErlang (Input i)    = ErlTuple [ErlAtom "input", ErlInt i]
+
+    fromErlang (ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]) = Output i j
+    fromErlang (ErlTuple [ErlAtom "input", ErlInt i]) = Input i
 
 instance Show Action where
     show (Output i j) = "Output "++(show i)++" high for "++(show j)++" seconds"
@@ -251,12 +276,21 @@ instance Show Action where
 
 instance Arbitrary Action where
     arbitrary = oneof [do
-                        x <- arbitrary
-                        y <- arbitrary
+                        x <- arbitrary `suchThat` (\x -> x >= 0 && x <= 10)
+                        y <- arbitrary `suchThat` (\x -> x >= 0)
                         return $ Output x y,
-                       fmap Input arbitrary]
+                       fmap Input (arbitrary `suchThat` (\x -> x >= 0 && x <= 10))]
 
 data Status = Out Int Bool | Inp Int Double
+
+instance Erlang Status where
+    toErlang (Out i b) = ErlTuple [ErlAtom "out", ErlInt i, erlBool b]
+    toErlang (Inp i d) = ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]
+
+    fromErlang (ErlTuple [ErlAtom "out", ErlInt i, ErlAtom tf])
+        | tf == "true" = Out i True
+        | tf == "false" = Out i False
+    fromErlang (ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]) = Inp i d
 
 instance Show Status where
     show (Out i b) = "Output "++(show i)++" "++(if b then "OK" else "ERR")
@@ -264,12 +298,13 @@ instance Show Status where
 
 validActs = any
 
-validStatus acts = predicate "validStatus" (sequence (map mkGen acts), \xs -> and $ zipWith isValid acts xs)
-    where
-        isValid (Output _ _) (Inp _ _) = False
-        isValid (Output i _) (Out j _) = i == j
-        isValid (Input i) (Out _ _) = False
-        isValid (Input i) (Inp j _)    = i == j
-        
-        mkGen (Output i _) = fmap (Out i) arbitrary
-        mkGen (Input i)    = fmap (Inp i) arbitrary
+validStatus acts = predicate ("validStatus " ++ (show acts))
+    (sequence (map mkGen acts), \xs -> and $ zipWith isValid acts xs)
+        where
+            isValid (Output _ _) (Inp _ _) = False
+            isValid (Output i _) (Out j _) = i == j
+            isValid (Input i) (Out _ _) = False
+            isValid (Input i) (Inp j _)    = i == j
+            
+            mkGen (Output i _) = fmap (Out i) arbitrary
+            mkGen (Input i)    = fmap (Inp i) arbitrary
