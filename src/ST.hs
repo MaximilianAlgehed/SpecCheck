@@ -114,8 +114,6 @@ instance (Erlang t) => Erlang (Protocol t) where
     fromErlang (ErlTuple [ErlAtom "pure", t])           = Pure (fromErlang t)
     fromErlang (ErlTuple [ErlAtom "choice", ErlAtom s]) = Choice s
 
--- Buggy, does not yet implement
--- being killed. Which means re-running tests is a bit fiddly.
 runErlang :: (Erlang t, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
@@ -181,8 +179,32 @@ specCheck impl t = loop 100
                             putStrLn "In:"
                             putStrLn "---"
                             sequence_ $ map (putStrLn . ("    "++) . printTrace) w
+                            --sequence_ $ map (putStrLn . ("    "++)) $ concat $ map (prettyTrace (2*(maxLen w))) w
                             putStrLn "---"
                             return ()
+                            where
+
+maxLen = maximum . (map (length . extract))
+    where
+        extract (Got (Pure s)) = s
+        extract (Got (Choice s)) = s
+        extract (Sent (Pure s)) = s
+        extract (Sent (Choice s)) = s
+
+prettyTrace n (Got (Pure x))    = ["|" ++ middle n x ++ "  |", "|<"++ line '-' n  ++ "|", "|"++line ' ' n ++ " |"]
+prettyTrace n (Got (Choice s))  = ["|" ++ middle n s ++ "  |", "|<"++ line '.' n ++ "  |", "|"++line ' ' n ++ " |"]
+prettyTrace n (Sent (Pure x))   = ["|" ++ middle n x ++ "  |", "|"++ line '-' n  ++ ">|", "|"++line ' ' n ++ " |"]
+prettyTrace n (Sent (Choice s)) = ["|" ++ middle n s ++ "  |", "|"++ line '.' n ++ ">|", "|"++line ' ' n ++ " |"]
+
+middle n s = (line ' ' m) ++ s ++ (line ' ' k)
+    where
+        m = if even (n - length s) then
+                (n - length s) `div` 2
+            else
+                (n - length s) `div` 2 + 1
+        k = (n - length s) `div` 2
+
+line c n = concat $ replicate (n - 1) $ [c]
 
 printTrace (Got (Pure x))   = "Got ("++x++")"
 printTrace (Got (Choice s)) = "Branched "++s
@@ -239,11 +261,11 @@ bookShop = bookShop' ([] :: [Int])
 
 bookShop' bs = Send any $
                \b -> let bs' = b:bs in
-                   ("another", (bookShop' bs'))
-                   <|>
-                   ("request", Get (isPermutation bs') $
-                               \bs' ->
-                   ("another", (bookShop' bs')) <|> ("done", End))
+               ("another", bookShop' bs')
+               <|>
+               ("request", Get (isPermutation bs') cont)
+
+cont bs = ("another", bookShop' bs) <|> ("done", End)
 
 {- The new example from POPL SRC -}
 protocol :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t

@@ -2,3 +2,6 @@
 
 * How to get the automata to play nice and still have
   the higher order syntax for results?
+
+* Monadic computation around the "get/send", maybe
+  do some IO during testing to verify correctness?
