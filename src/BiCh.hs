@@ -1,7 +1,15 @@
-{-# LANGUAGE MultiParamTypeClasses, DeriveFunctor, FlexibleContexts, FlexibleInstances #-}
+{-# LANGUAGE GADTs,
+             TypeOperators,
+             MultiParamTypeClasses,
+             FlexibleInstances,
+             FlexibleContexts,
+             UndecidableInstances,
+             DeriveFunctor #-}
 -- | This file gives a model of communication between two actors implementing a session
 -- | type
 module BiCh where
+import Typeclasses
+import Foreign.Erlang
 import Control.Concurrent.Chan
 
 -- | Protocol
@@ -34,3 +42,11 @@ instance BiChannel (P Chan) a where
     bidirect (P cin cout exit_chan) = P cout cin exit_chan
     kill (P _ _ exit_chan) = writeChan exit_chan ()
     waitToBeKilled (P _ _ exit_chan) = readChan exit_chan
+
+instance (t :<: ErlType) => Protocol t :<: ErlType where
+    embed (Pure t)    = ErlTuple [ErlAtom "pure", embed t]
+    embed (Choice s)  = ErlTuple [ErlAtom "choice", ErlAtom s]
+
+    extract (ErlTuple [ErlAtom "pure", t])           = fmap Pure $ extract t
+    extract (ErlTuple [ErlAtom "choice", ErlAtom s]) = return $ Choice s
+    extract _ = Nothing

@@ -76,3 +76,9 @@ instance (a :<: ErlType, b :<: ErlType) => (a, b) :<: ErlType where
                                     l <- extract x
                                     r <- extract y
                                     return (l, r)
+
+instance (t :<: ErlType) => Erlang t where
+    toErlang = embed
+    fromErlang = fromJust . extract -- unsafe
+
+fromJust (Just x) = x

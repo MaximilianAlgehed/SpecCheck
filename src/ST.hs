@@ -26,7 +26,6 @@ instance Arbitrary Choice where
                 else
                     return R
 
-
 type Predicate a = (Gen a, a -> Maybe String)
 
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
@@ -140,18 +139,6 @@ traceMatch (Sent x) (Send (gen, p) _) =
         Just a  -> p a == Nothing -- Predicate holds / doesn't hold
         Nothing -> False -- Type error
 
-instance (t :<: ErlType) => Protocol t :<: ErlType where
-    embed (Pure t)    = ErlTuple [ErlAtom "pure", embed t]
-    embed (Choice s)  = ErlTuple [ErlAtom "choice", ErlAtom s]
-
-    extract (ErlTuple [ErlAtom "pure", t])           = fmap Pure $ extract t
-    extract (ErlTuple [ErlAtom "choice", ErlAtom s]) = return $ Choice s
-    extract _ = Nothing
-
-instance (t :<: ErlType) => Erlang t where
-    toErlang = embed
-    fromErlang = fromJust . extract -- unsafe
-
 runErlang :: (t :<: ErlType, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
@@ -248,8 +235,6 @@ printTrace (Got (Pure x))   = "Got ("++x++")"
 printTrace (Got (Choice s)) = "Branched "++s
 printTrace (Sent (Pure x))  = "Sent ("++x++")"
 printTrace (Sent (Choice s)) = "Chose "++s
-
-fromJust (Just x) = x
 
 -- Some generator-predicate pairs
 posNum :: (Ord a, Num a, Arbitrary a) => Predicate a
