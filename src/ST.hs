@@ -2,7 +2,8 @@
              TypeOperators,
              MultiParamTypeClasses,
              FlexibleInstances,
-             FlexibleContexts #-}
+             FlexibleContexts,
+             UndecidableInstances #-}
 module ST where
 import Prelude hiding (any)
 import Test.QuickCheck
@@ -13,6 +14,7 @@ import System.IO
 import Control.Concurrent
 import Control.Monad.Writer.Lazy
 import Control.Concurrent.Chan
+import Typeclasses
 
 data Choice = L | R
 
@@ -24,22 +26,11 @@ instance Arbitrary Choice where
                 else
                     return R
 
-class a :<: b where
-    embed   :: a -> b
-    extract :: b -> Maybe a
-
-instance a :<: a where
-    embed   = id
-    extract = Just . id
 
 type Predicate a = (Gen a, a -> Maybe String)
 
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
 predicate s (g, p) = (g, \a -> guard (not (p a)) >> return s)
-
-instance (Erlang a) => a :<: ErlType where
-    embed = toErlang
-    extract = Just . fromErlang
 
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
@@ -120,33 +111,48 @@ sessionShrink :: (Show c, BiChannel ch c)
             -> ST c
             -> ch (Protocol c)
             -> WriterT (Log String) IO ShrinkStatus
-sessionShrink _ End _  = return FailedToShrink -- We didn't failsify the property
-sessionShrink [] _ _   = return FailedToShrink -- Our trace is longer than the
-                                               -- other trace!
-sessionShrink _  _  ch = undefined -- The other cases... 
-                                   -- Take the first element of the list,
-                                   -- if it is accepted by the head of the
-                                   -- SessionType and it is a Send we can
-                                   -- attempt to shrink it whilst keeping
-                                   -- within the bounds of the predicate.
-                                   -- If it is a Get we just react to it.
-                                   -- If it is a Choice we make the same choice
+sessionShrink _ End _ = return FailedToShrink -- We didn't failsify the property
 
-                                   -- If it is _not_ accepted by the head of
-                                   -- the session type we move forward until
-                                   -- we find the first thing that is accepted.
-                                   -- If there is no such element we discard
-                                   -- the trace and continue on our merry way.
+sessionShrink [] _  _ = return FailedToShrink -- Our trace is longer than the
+                                              -- other trace, so it's obviously not
+                                              -- a shrink
+                                              
+sessionShrink _  _  _ = undefined -- The other cases... 
+                                  -- Take the first element of the list,
+                                  -- if it is accepted by the head of the
+                                  -- SessionType and it is a Send we can
+                                  -- attempt to shrink it whilst keeping
+                                  -- within the bounds of the predicate.
+                                  -- If it is a Get we just react to it.
+                                  -- If it is a Choice we make the same choice
 
--- | So that we can talk to Erlang!
-instance (Erlang t) => Erlang (Protocol t) where
-    toErlang (Pure t)    = ErlTuple [ErlAtom "pure", toErlang t]
-    toErlang (Choice s)  = ErlTuple [ErlAtom "choice", ErlAtom s]
+                                  -- If it is _not_ accepted by the head of
+                                  -- the session type we move forward until
+                                  -- we find the first thing that is accepted.
+                                  -- If there is no such element we discard
+                                  -- the trace and continue on our merry way.
 
-    fromErlang (ErlTuple [ErlAtom "pure", t])           = Pure (fromErlang t)
-    fromErlang (ErlTuple [ErlAtom "choice", ErlAtom s]) = Choice s
+traceMatch :: Interaction t -> ST t -> Bool
+traceMatch (Got x) (Get _ _) = True
+traceMatch (Sent x) (Send (gen, p) _) =
+    let x' = extract x in
+    case x' of
+        Just a  -> p a == Nothing -- Predicate holds / doesn't hold
+        Nothing -> False -- Type error
 
-runErlang :: (Erlang t, Show t)
+instance (t :<: ErlType) => Protocol t :<: ErlType where
+    embed (Pure t)    = ErlTuple [ErlAtom "pure", embed t]
+    embed (Choice s)  = ErlTuple [ErlAtom "choice", ErlAtom s]
+
+    extract (ErlTuple [ErlAtom "pure", t])           = fmap Pure $ extract t
+    extract (ErlTuple [ErlAtom "choice", ErlAtom s]) = return $ Choice s
+    extract _ = Nothing
+
+instance (t :<: ErlType) => Erlang t where
+    toErlang = embed
+    fromErlang = fromJust . extract -- unsafe
+
+runErlang :: (t :<: ErlType, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
@@ -154,7 +160,7 @@ runErlang :: (Erlang t, Show t)
           -> IO ()
 runErlang self mod fun st = specCheck (runfun self) st
     where
-        runfun :: (Erlang r) => Self -> P Chan (Protocol r) -> IO ()
+        runfun :: (t :<: ErlType) => Self -> P Chan (Protocol t) -> IO ()
         runfun self ch =
             do
                 mbox <- createMBox self
