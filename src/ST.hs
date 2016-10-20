@@ -44,8 +44,14 @@ instance (Erlang a) => a :<: ErlType where
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
 
+-- It would be good to get a monad in here so we can
+-- do some side-effects, like reading the database to
+-- check if what the server is saying is actually true
+-- etc.
 data ST c where
-    Send   :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c
+    Send   :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c -- (a -> ST c) to a (Reader a (ST c))
+                                                                      -- could maybe give sharing,
+                                                                      -- thus allowing us to find loops?
     Get    :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
     Choose :: Gen Int -> [(String, ST c)] -> ST c
     Branch :: Gen Int -> [(String, ST c)] -> ST c
@@ -106,12 +112,16 @@ sessionTest (Branch _ choices) ch =
                     return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
+data ShrinkStatus = FailedToShrink | FailingPredicate String
+
 sessionShrink :: (Show c, BiChannel ch c)
             => Log c
             -> ST c
             -> ch (Protocol c)
-            -> WriterT (Log String) IO (Maybe String) 
-sessionShrink [] st ch = sessionTest st ch  
+            -> WriterT (Log String) IO ShrinkStatus
+sessionShrink _ End _  = return FailedToShrink -- We didn't failsify the property
+sessionShrink [] _ _   = return FailedToShrink -- Our trace is longer than the
+                                               -- other trace!
 sessionShrink _  _  ch = undefined -- The other cases... 
                                    -- Take the first element of the list,
                                    -- if it is accepted by the head of the
