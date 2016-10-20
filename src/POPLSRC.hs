@@ -1,4 +1,11 @@
+{-# LANGUAGE GADTs,
+             TypeOperators,
+             MultiParamTypeClasses,
+             FlexibleInstances,
+             FlexibleContexts,
+             UndecidableInstances #-}
 import ST
+import Typeclasses
 import Foreign.Erlang
 import Test.QuickCheck
 
@@ -20,12 +27,13 @@ validData = predicate "validData" (sequence $ [arbitrary, arbitrary, arbitrary],
 
 data Action = Output Int Int | Input Int
 
-instance Erlang Action where
-    toErlang (Output i j) = ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]
-    toErlang (Input i)    = ErlTuple [ErlAtom "input", ErlInt i]
+instance Action :<: ErlType where
+    embed (Output i j) = ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]
+    embed (Input i)    = ErlTuple [ErlAtom "input", ErlInt i]
 
-    fromErlang (ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]) = Output i j
-    fromErlang (ErlTuple [ErlAtom "input", ErlInt i]) = Input i
+    extract (ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]) = Just $ Output i j
+    extract (ErlTuple [ErlAtom "input", ErlInt i]) = Just $ Input i
+    extract _ = Nothing
 
 instance Show Action where
     show (Output i j) = "Output "++(show i)++" high for "++(show j)++" seconds"
@@ -40,20 +48,21 @@ instance Arbitrary Action where
 
 data Status = Out Int Bool | Inp Int Double
 
-instance Erlang Status where
-    toErlang (Out i b) = ErlTuple [ErlAtom "out", ErlInt i, erlBool b]
-    toErlang (Inp i d) = ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]
+instance Status :<: ErlType where
+    embed (Out i b) = ErlTuple [ErlAtom "out", ErlInt i, erlBool b]
+    embed (Inp i d) = ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]
 
-    fromErlang (ErlTuple [ErlAtom "out", ErlInt i, ErlAtom tf])
-        | tf == "true" = Out i True
-        | tf == "false" = Out i False
-    fromErlang (ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]) = Inp i d
+    extract (ErlTuple [ErlAtom "out", ErlInt i, ErlAtom tf])
+        | tf == "true" = Just $ Out i True
+        | tf == "false" = Just $ Out i False
+    extract (ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]) = Just $ Inp i d
+    extract _ = Nothing
 
 instance Show Status where
     show (Out i b) = "Output "++(show i)++" "++(if b then "OK" else "ERR")
     show (Inp i d) = "Input "++(show i)++" "++(show d)
 
-validActs = any
+validActs = wildcard
 
 validStatus acts = predicate ("validStatus " ++ (show acts))
     (sequence (map mkGen acts), \xs -> and $ zipWith isValid acts xs)
