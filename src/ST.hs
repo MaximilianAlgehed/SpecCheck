@@ -106,6 +106,27 @@ sessionTest (Branch _ choices) ch =
                     return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
+sessionShrink :: (Show c, BiChannel ch c)
+            => Log c
+            -> ST c
+            -> ch (Protocol c)
+            -> WriterT (Log String) IO (Maybe String) 
+sessionShrink [] st ch = sessionTest st ch  
+sessionShrink _  _  ch = undefined -- The other cases... 
+                                   -- Take the first element of the list,
+                                   -- if it is accepted by the head of the
+                                   -- SessionType and it is a Send we can
+                                   -- attempt to shrink it whilst keeping
+                                   -- within the bounds of the predicate.
+                                   -- If it is a Get we just react to it.
+                                   -- If it is a Choice we make the same choice
+
+                                   -- If it is _not_ accepted by the head of
+                                   -- the session type we move forward until
+                                   -- we find the first thing that is accepted.
+                                   -- If there is no such element we discard
+                                   -- the trace and continue on our merry way.
+
 -- | So that we can talk to Erlang!
 instance (Erlang t) => Erlang (Protocol t) where
     toErlang (Pure t)    = ErlTuple [ErlAtom "pure", toErlang t]
@@ -243,8 +264,8 @@ inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x
                             Just s  -> Just s
                 Just s  -> Just s
 
-any :: (Arbitrary a) => Predicate a
-any = (arbitrary, const Nothing)
+wildcard :: (Arbitrary a) => Predicate a
+wildcard = (arbitrary, const Nothing)
 
 l <|> r = Choose (oneof [return 0, return 1]) [l, r]
 infixr 1 <|>
@@ -254,79 +275,3 @@ infixr 1 <&>
 
 f .- c = f (const c)
 infixr 0 .-
-
-{- An example of "buying books from amazon" -}
-bookShop :: ST ErlType
-bookShop = bookShop' ([] :: [Int])
-
-bookShop' bs = Send any $
-               \b -> let bs' = b:bs in
-               ("another", bookShop' bs')
-               <|>
-               ("request", Get (isPermutation bs') cont)
-
-cont bs = ("another", bookShop' bs) <|> ("done", End)
-
-{- The new example from POPL SRC -}
-protocol :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
-protocol = Send validData .-
-           ("execute", execActs) <&> ("continue", continue)
-
-execActs :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
-execActs =
-    Get validActs $ \acts ->
-    Send (validStatus acts) .-
-    continue
-
-continue :: ([Action] :<: t, [Status] :<: t, [Double] :<: t) => ST t
-continue = ("stayAwake", protocol) <|> ("stop", End)
-
-validData = predicate "validData" (sequence $ [arbitrary, arbitrary, arbitrary], \xs -> length (xs :: [Double]) == 3 )
-
-data Action = Output Int Int | Input Int
-
-instance Erlang Action where
-    toErlang (Output i j) = ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]
-    toErlang (Input i)    = ErlTuple [ErlAtom "input", ErlInt i]
-
-    fromErlang (ErlTuple [ErlAtom "output", ErlInt i, ErlInt j]) = Output i j
-    fromErlang (ErlTuple [ErlAtom "input", ErlInt i]) = Input i
-
-instance Show Action where
-    show (Output i j) = "Output "++(show i)++" high for "++(show j)++" seconds"
-    show (Input i)    = "Get input "++(show i)
-
-instance Arbitrary Action where
-    arbitrary = oneof [do
-                        x <- arbitrary `suchThat` (\x -> x >= 0 && x <= 10)
-                        y <- arbitrary `suchThat` (\x -> x >= 0)
-                        return $ Output x y,
-                       fmap Input (arbitrary `suchThat` (\x -> x >= 0 && x <= 10))]
-
-data Status = Out Int Bool | Inp Int Double
-
-instance Erlang Status where
-    toErlang (Out i b) = ErlTuple [ErlAtom "out", ErlInt i, erlBool b]
-    toErlang (Inp i d) = ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]
-
-    fromErlang (ErlTuple [ErlAtom "out", ErlInt i, ErlAtom tf])
-        | tf == "true" = Out i True
-        | tf == "false" = Out i False
-    fromErlang (ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]) = Inp i d
-
-instance Show Status where
-    show (Out i b) = "Output "++(show i)++" "++(if b then "OK" else "ERR")
-    show (Inp i d) = "Input "++(show i)++" "++(show d)
-
-validActs = any
-
-validStatus acts = predicate ("validStatus " ++ (show acts))
-    (sequence (map mkGen acts), \xs -> and $ zipWith isValid acts xs)
-        where
-            isValid (Output _ _) (Inp _ _) = False
-            isValid (Output i _) (Out j _) = i == j
-            isValid (Input i) (Out _ _) = False
-            isValid (Input i) (Inp j _)    = i == j
-            
-            mkGen (Output i _) = fmap (Out i) arbitrary
-            mkGen (Input i)    = fmap (Inp i) arbitrary
