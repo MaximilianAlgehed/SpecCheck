@@ -52,6 +52,7 @@ data ST c where
     Send   :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c -- (a -> ST c) to a (Reader a (ST c))
                                                                       -- could maybe give sharing,
                                                                       -- thus allowing us to find loops?
+                                                                      -- Or maybe an Arrow? Like John said...
     Get    :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
     Choose :: Gen Int -> [(String, ST c)] -> ST c
     Branch :: Gen Int -> [(String, ST c)] -> ST c
