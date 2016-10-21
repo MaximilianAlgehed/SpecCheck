@@ -105,31 +105,63 @@ sessionTest End _ = return Nothing
 
 data ShrinkStatus = FailedToShrink | FailingPredicate String
 
+fromMaybeSS :: Maybe String -> ShrinkStatus
+fromMaybeSS Nothing = FailedToShrink
+fromMaybeSS (Just s) = FailingPredicate s
+
 sessionShrink :: (Show c, BiChannel ch c)
-            => Log c
+            => Int
+            -> Log c
             -> ST c
             -> ch (Protocol c)
             -> WriterT (Log String) IO ShrinkStatus
-sessionShrink _ End _ = return FailedToShrink -- We didn't failsify the property
-
-sessionShrink [] _  _ = return FailedToShrink -- Our trace is longer than the
-                                              -- other trace, so it's obviously not
-                                              -- a shrink
-                                              
-sessionShrink _  _  _ = undefined -- The other cases... 
-                                  -- Take the first element of the list,
-                                  -- if it is accepted by the head of the
-                                  -- SessionType and it is a Send we can
-                                  -- attempt to shrink it whilst keeping
-                                  -- within the bounds of the predicate.
-                                  -- If it is a Get we just react to it.
-                                  -- If it is a Choice we make the same choice
-
-                                  -- If it is _not_ accepted by the head of
-                                  -- the session type we move forward until
-                                  -- we find the first thing that is accepted.
-                                  -- If there is no such element we discard
-                                  -- the trace and continue on our merry way.
+sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the original trace
+sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
+sessionShrink n (x:xs) st ch
+    | traceMatch x st   = case (x, st) of
+                            (Got (Pure _), Get (_, pred) cont) ->
+                                do
+                                    Pure mv <- lift $ get ch
+                                    case extract mv of
+                                        Just value -> if pred value == Nothing then
+                                                        do
+                                                            tell [Got (Pure (show value))]
+                                                            sessionShrink (n-1) xs (cont value) ch
+                                                      else
+                                                        do
+                                                            tell [Got (Pure (show value))]
+                                                            return $ fromMaybeSS $ fmap (++" "++(show value)) (pred value)
+                                        Nothing    -> do 
+                                                        tell [Got (Pure (show mv))]
+                                                        return $ FailingPredicate "Type error!"
+                            (Got (Choice s), Branch _ choices) ->
+                                do
+                                    choice <- lift $ get ch
+                                    case choice of
+                                        Choice s
+                                            | s `elem` (map fst choices) -> do
+                                                                                tell [Got (Choice s)]
+                                                                                sessionShrink (n-1) xs (fromJust (lookup s choices)) ch
+                                            | otherwise -> do
+                                                            tell [Got (Choice s)]
+                                                            return $ FailingPredicate "Tried to make invalid call!"
+                                        _ -> do
+                                                tell [Got (Pure (show choice))]
+                                                return $ FailingPredicate "Type error!"
+                            (Sent (Pure x), Send _ cont) -> 
+                                do
+                                    lift $ put ch $ Pure x
+                                    let Just value = extract x
+                                    tell [Sent (Pure (show value))]
+                                    sessionShrink (n-1) xs (cont value) ch
+                            (Sent (Choice s), Choose _ choices) ->
+                                do
+                                    let cont = head [cont | (n, cont) <- choices, n == s]
+                                    tell [Sent (Choice s)]
+                                    lift $ put ch (Choice s)
+                                    sessionShrink (n-1) xs cont ch
+    | otherwise         = sessionShrink (n-1) [] st ch 
+sessionShrink n [] st ch = undefined -- Just mimic sessionTest but with size
 
 traceMatch :: Interaction (Protocol t) -> ST t -> Bool
 traceMatch (Got (Pure x)) (Get _ _) = True
@@ -140,7 +172,7 @@ traceMatch (Sent (Pure x)) (Send (gen, p) _) =
         Nothing -> False -- Type error
 traceMatch (Got (Choice s)) (Branch _ xs) = s `elem` [fst x | x <- xs]
 traceMatch (Sent (Choice s)) (Choose _ xs) = s `elem` [fst x | x <- xs]
-traceMathc _ = False
+traceMatch _ _ = False
 
 runErlang :: (t :<: ErlType, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
