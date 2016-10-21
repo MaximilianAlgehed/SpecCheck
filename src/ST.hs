@@ -131,13 +131,16 @@ sessionShrink _  _  _ = undefined -- The other cases...
                                   -- If there is no such element we discard
                                   -- the trace and continue on our merry way.
 
-traceMatch :: Interaction t -> ST t -> Bool
-traceMatch (Got x) (Get _ _) = True
-traceMatch (Sent x) (Send (gen, p) _) =
+traceMatch :: Interaction (Protocol t) -> ST t -> Bool
+traceMatch (Got (Pure x)) (Get _ _) = True
+traceMatch (Sent (Pure x)) (Send (gen, p) _) =
     let x' = extract x in
     case x' of
         Just a  -> p a == Nothing -- Predicate holds / doesn't hold
         Nothing -> False -- Type error
+traceMatch (Got (Choice s)) (Branch _ xs) = s `elem` [fst x | x <- xs]
+traceMatch (Sent (Choice s)) (Choose _ xs) = s `elem` [fst x | x <- xs]
+traceMathc _ = False
 
 runErlang :: (t :<: ErlType, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
