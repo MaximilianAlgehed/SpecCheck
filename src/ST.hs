@@ -39,11 +39,8 @@ erlBool False = ErlAtom "false"
 -- check if what the server is saying is actually true
 -- etc.
 data ST c where
-    Send   :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c -- (a -> ST c) to a (Reader a (ST c))
-                                                                      -- could maybe give sharing,
-                                                                      -- thus allowing us to find loops?
-                                                                      -- Or maybe an Arrow? Like John said...
-    Get    :: (Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
+    Send   :: (Arbitrary a, Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c
+    Get    :: (Arbitrary a, Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
     Choose :: Gen Int -> [(String, ST c)] -> ST c
     Branch :: Gen Int -> [(String, ST c)] -> ST c
     End    :: ST c
@@ -139,19 +136,22 @@ sessionShrink n (x:xs) st ch
                                     choice <- lift $ get ch
                                     case choice of
                                         Choice s
-                                            | s `elem` (map fst choices) -> do
-                                                                                tell [Got (Choice s)]
-                                                                                sessionShrink (n-1) xs (fromJust (lookup s choices)) ch
-                                            | otherwise -> do
-                                                            tell [Got (Choice s)]
-                                                            return $ FailingPredicate "Tried to make invalid call!"
+                                            | s `elem` (map fst choices) ->
+                                                do
+                                                  tell [Got (Choice s)]
+                                                  sessionShrink (n-1) xs (fromJust (lookup s choices)) ch
+                                            | otherwise ->
+                                                do
+                                                  tell [Got (Choice s)]
+                                                  return $ FailingPredicate "Tried to make invalid call!"
                                         _ -> do
                                                 tell [Got (Pure (show choice))]
                                                 return $ FailingPredicate "Type error!"
-                            (Sent (Pure x), Send _ cont) -> 
+                            (Sent (Pure x), Send (gen, pred) cont) -> 
                                 do
-                                    lift $ put ch $ Pure x
-                                    let Just value = extract x
+                                    let Just x' = extract x
+                                    value <- lift $ shrinkValue gen pred x'
+                                    lift $ put ch $ Pure (embed value)
                                     tell [Sent (Pure (show value))]
                                     sessionShrink (n-1) xs (cont value) ch
                             (Sent (Choice s), Choose _ choices) ->
@@ -162,6 +162,12 @@ sessionShrink n (x:xs) st ch
                                     sessionShrink (n-1) xs cont ch
     | otherwise         = sessionShrink (n-1) [] st ch 
 sessionShrink n [] st ch = undefined -- Just mimic sessionTest but with size
+
+shrinkValue :: (Arbitrary a) => Gen a -> (a -> Maybe String) -> a -> IO a
+shrinkValue gen pred a =
+    case [x | x <- shrink a, pred x == Nothing] of
+        [] -> generate gen
+        (x:_) -> return x
 
 traceMatch :: Interaction (Protocol t) -> ST t -> Bool
 traceMatch (Got (Pure x)) (Get _ _) = True
