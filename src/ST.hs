@@ -154,14 +154,57 @@ sessionShrink n (x:xs) st ch
                                     lift $ put ch $ Pure (embed value)
                                     tell [Sent (Pure (show value))]
                                     sessionShrink (n-1) xs (cont value) ch
-                            (Sent (Choice s), Choose _ choices) ->
+                            (_, Choose gen choices) ->
                                 do
-                                    let cont = head [cont | (n, cont) <- choices, n == s]
-                                    tell [Sent (Choice s)]
-                                    lift $ put ch (Choice s)
+                                    choice <- lift $ generate gen
+                                    let (name, cont) = choices!!(choice `mod` (length choices))
+                                    tell [Sent (Choice name)]
+                                    lift $ put ch (Choice name)
                                     sessionShrink (n-1) xs cont ch
-    | otherwise         = sessionShrink (n-1) [] st ch 
-sessionShrink n [] st ch = undefined -- Just mimic sessionTest but with size
+    | otherwise         = sessionShrink n xs st ch 
+-- We have given up on following the trace
+sessionShrink n [] (Send (gen, _) cont) ch =
+    do
+        value <- lift $ generate gen
+        lift $ put ch $ Pure (embed value)
+        tell [Sent (Pure (show value))]
+        sessionShrink (n-1) [] (cont value) ch
+sessionShrink n [] (Get (_, pred) cont) ch =
+    do
+        Pure mv <- lift $ get ch
+        case extract mv of
+            Just value -> if pred value == Nothing then
+                            do
+                                tell [Got (Pure (show value))]
+                                sessionShrink (n-1) [] (cont value) ch
+                          else
+                            do
+                                tell [Got (Pure (show value))]
+                                return $ fromMaybeSS $ fmap (++" "++(show value)) (pred value)
+            Nothing    -> do 
+                            tell [Got (Pure (show mv))]
+                            return $ FailingPredicate "Type error!"
+sessionShrink n [] (Choose gen choices) ch =
+    do
+        choice <- lift $ generate gen
+        let (name, cont) = choices!!(choice `mod` (length choices))
+        tell [Sent (Choice name)]
+        lift $ put ch (Choice name)
+        sessionShrink (n-1) [] cont ch
+sessionShrink n [] (Branch _ choices) ch =
+    do
+        choice <- lift $ get ch
+        case choice of
+            Choice s
+                | s `elem` (map fst choices) -> do
+                                                    tell [Got (Choice s)]
+                                                    sessionShrink (n-1) [] (fromJust (lookup s choices)) ch
+                | otherwise -> do
+                                tell [Got (Choice s)]
+                                return $ FailingPredicate "Tried to make invalid call!"
+            _ -> do
+                    tell [Got (Pure (show choice))]
+                    return $ FailingPredicate "Type error!"
 
 shrinkValue :: (Arbitrary a) => Gen a -> (a -> Maybe String) -> a -> IO a
 shrinkValue gen pred a =
@@ -248,7 +291,6 @@ specCheck impl t = loop 100
                             --sequence_ $ map (putStrLn . ("    "++)) $ concat $ map (prettyTrace (2*(maxLen w))) w
                             putStrLn "---"
                             return ()
-                            where
 
 maxLen = maximum . (map (length . extract))
     where
