@@ -16,16 +16,6 @@ import Control.Monad.Writer.Lazy
 import Control.Concurrent.Chan
 import Typeclasses
 
-data Choice = L | R
-
-instance Arbitrary Choice where
-    arbitrary = do
-                x <- arbitrary
-                if x then
-                    return L
-                else
-                    return R
-
 type Predicate a = (Gen a, a -> Maybe String)
 
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
@@ -55,12 +45,12 @@ dual End              = End
 sessionTest :: (Show c, BiChannel ch c)
             => ST c
             -> ch (Protocol c)
-            -> WriterT (Log String) IO (Maybe String)
+            -> WriterT (Log (c, String)) IO (Maybe String)
 sessionTest (Send (gen, _) cont) ch =
     do
         value <- lift $ generate gen
         lift $ put ch $ Pure (embed value)
-        tell [Sent (Pure (show value))]
+        tell [Sent (Pure (embed value, show value))]
         sessionTest (cont value) ch
 sessionTest (Get (_, pred) cont) ch =
     do
@@ -68,14 +58,14 @@ sessionTest (Get (_, pred) cont) ch =
         case extract mv of
             Just value -> if pred value == Nothing then
                             do
-                                tell [Got (Pure (show value))]
+                                tell [Got (Pure (mv, show value))]
                                 sessionTest (cont value) ch
                           else
                             do
-                                tell [Got (Pure (show value))]
+                                tell [Got (Pure (mv, show value))]
                                 return $ fmap (++" "++(show value)) (pred value)
             Nothing    -> do 
-                            tell [Got (Pure (show mv))]
+                            tell [Got (Pure (mv, show mv))]
                             return $ Just "Type error!"
 sessionTest (Choose gen choices) ch =
     do
@@ -95,8 +85,8 @@ sessionTest (Branch _ choices) ch =
                 | otherwise -> do
                                 tell [Got (Choice s)]
                                 return $ Just "Tried to make invalid call!"
-            _ -> do
-                    tell [Got (Pure (show choice))]
+            Pure v -> do
+                    tell [Got $ Pure (v, show v)]
                     return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
@@ -111,7 +101,8 @@ sessionShrink :: (Show c, BiChannel ch c)
             -> Log c
             -> ST c
             -> ch (Protocol c)
-            -> WriterT (Log String) IO ShrinkStatus
+            -> WriterT (Log String) IO ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
+                                                    -- of "Log String"
 sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the original trace
 sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
 sessionShrink n (x:xs) st ch
@@ -284,13 +275,30 @@ specCheck impl t = loop 100
                         do
                             hPutStr stderr $ "\r                  \r"
                             putStrLn $ "Failed after "++(show (100 - n))++" tests"
-                            putStrLn $ "With: "++(fromJust b)
+                            shrinkLoop 0 (fromJust b) w
+
+        shrinkLoop 0 s trace =
+                        do
+                            hPutStr stderr $ "\r                  \r"
+                            putStrLn $ "With: "++s
                             putStrLn "In:"
                             putStrLn "---"
-                            sequence_ $ map (putStrLn . ("    "++) . printTrace) w
+                            sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap (fmap snd)) trace)
                             --sequence_ $ map (putStrLn . ("    "++)) $ concat $ map (prettyTrace (2*(maxLen w))) w
                             putStrLn "---"
                             return ()
+        {-
+        shrinkLoop n s trace =
+                        do
+                            hPutStr stderr $ "\rshrinking...               \r"
+                            ch <- new
+                            forkIO $ impl (bidirect ch)
+                            (b, w) <- runWriterT $ sessionShrink (length trace) (map (fmap (fmap fst)) trace) t ch
+                            kill ch
+                            case b of
+                                FailedToShrink -> shrinkLoop (n-1) s trace
+                                FailingPredicate s' -> shrinkLoop (n-1) s' w
+        -}
 
 maxLen = maximum . (map (length . extract))
     where
