@@ -331,11 +331,14 @@ printTrace (Sent (Choice s)) = "Chose "++s
 posNum :: (Ord a, Num a, Arbitrary a) => Predicate a
 posNum = predicate "posNum" (fmap ((+1) . abs) arbitrary, (>0))
 
+lessThan :: (Ord a, Arbitrary a, Show a) => a -> Predicate a
+lessThan v = predicate (show v ++ " >") (arbitrary `suchThat` (<v), (<v))
+
 is :: (Eq a, Show a) => a -> Predicate a
 is a = predicate ("is "++(show a)) (return a,(a==))
 
-isPermutation :: (Ord a, Show a) => [a] -> Predicate [a]
-isPermutation bs = predicate ("isPermutation " ++ (show bs)) (shuffle bs, (((sort bs) ==) . sort))
+permutationOf :: (Ord a, Show a) => [a] -> Predicate [a]
+permutationOf bs = predicate ("permutationOf " ++ (show bs)) (shuffle bs, (((sort bs) ==) . sort))
 
 inRange :: (Ord a, Show a, Arbitrary a) => (a, a) -> Predicate a
 inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x -> x >= l && x <= h), (\x -> x >= l && x <= h))
