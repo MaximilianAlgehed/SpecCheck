@@ -48,6 +48,9 @@ instance Arbitrary Action where
 
 data Status = Out Int Bool | Inp Int Double
 
+instance Arbitrary Status where
+    arbitrary = oneof [Out <$> arbitrary <*> arbitrary, Inp <$> arbitrary <*> arbitrary]
+
 instance Status :<: ErlType where
     embed (Out i b) = ErlTuple [ErlAtom "out", ErlInt i, erlBool b]
     embed (Inp i d) = ErlTuple [ErlAtom "inp", ErlInt i, ErlFloat d]

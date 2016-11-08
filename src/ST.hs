@@ -5,6 +5,7 @@
              FlexibleContexts,
              UndecidableInstances #-}
 module ST where
+import Debug.Trace
 import Prelude hiding (any)
 import Test.QuickCheck
 import Data.List hiding (any)
@@ -101,8 +102,8 @@ sessionShrink :: (Show c, BiChannel ch c)
             -> Log c
             -> ST c
             -> ch (Protocol c)
-            -> WriterT (Log String) IO ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
-                                                    -- of "Log String"
+            -> WriterT (Log (c, String)) IO ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
+                                                         -- of "Log String"
 sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the original trace
 sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
 sessionShrink n (x:xs) st ch
@@ -113,14 +114,14 @@ sessionShrink n (x:xs) st ch
                                     case extract mv of
                                         Just value -> if pred value == Nothing then
                                                         do
-                                                            tell [Got (Pure (show value))]
+                                                            tell [Got (Pure (mv, (show value)))]
                                                             sessionShrink (n-1) xs (cont value) ch
                                                       else
                                                         do
-                                                            tell [Got (Pure (show value))]
+                                                            tell [Got (Pure (mv, (show value)))]
                                                             return $ fromMaybeSS $ fmap (++" "++(show value)) (pred value)
                                         Nothing    -> do 
-                                                        tell [Got (Pure (show mv))]
+                                                        tell [Got (Pure (mv, (show mv)))]
                                                         return $ FailingPredicate "Type error!"
                             (Got (Choice s), Branch _ choices) ->
                                 do
@@ -135,15 +136,15 @@ sessionShrink n (x:xs) st ch
                                                 do
                                                   tell [Got (Choice s)]
                                                   return $ FailingPredicate "Tried to make invalid call!"
-                                        _ -> do
-                                                tell [Got (Pure (show choice))]
+                                        Pure v -> do
+                                                tell [Got (Pure (v, (show v)))]
                                                 return $ FailingPredicate "Type error!"
                             (Sent (Pure x), Send (gen, pred) cont) -> 
                                 do
                                     let Just x' = extract x
                                     value <- lift $ shrinkValue gen pred x'
                                     lift $ put ch $ Pure (embed value)
-                                    tell [Sent (Pure (show value))]
+                                    tell [Sent (Pure (embed value, (show value)))]
                                     sessionShrink (n-1) xs (cont value) ch
                             (_, Choose gen choices) ->
                                 do
@@ -158,7 +159,7 @@ sessionShrink n [] (Send (gen, _) cont) ch =
     do
         value <- lift $ generate gen
         lift $ put ch $ Pure (embed value)
-        tell [Sent (Pure (show value))]
+        tell [Sent (Pure (embed value, (show value)))]
         sessionShrink (n-1) [] (cont value) ch
 sessionShrink n [] (Get (_, pred) cont) ch =
     do
@@ -166,14 +167,14 @@ sessionShrink n [] (Get (_, pred) cont) ch =
         case extract mv of
             Just value -> if pred value == Nothing then
                             do
-                                tell [Got (Pure (show value))]
+                                tell [Got (Pure (mv, (show value)))]
                                 sessionShrink (n-1) [] (cont value) ch
                           else
                             do
-                                tell [Got (Pure (show value))]
+                                tell [Got (Pure (mv, (show value)))]
                                 return $ fromMaybeSS $ fmap (++" "++(show value)) (pred value)
             Nothing    -> do 
-                            tell [Got (Pure (show mv))]
+                            tell [Got (Pure (mv, (show mv)))]
                             return $ FailingPredicate "Type error!"
 sessionShrink n [] (Choose gen choices) ch =
     do
@@ -193,15 +194,15 @@ sessionShrink n [] (Branch _ choices) ch =
                 | otherwise -> do
                                 tell [Got (Choice s)]
                                 return $ FailingPredicate "Tried to make invalid call!"
-            _ -> do
-                    tell [Got (Pure (show choice))]
+            Pure v -> do
+                    tell [Got (Pure (v, (show v)))]
                     return $ FailingPredicate "Type error!"
 
 shrinkValue :: (Arbitrary a) => Gen a -> (a -> Maybe String) -> a -> IO a
 shrinkValue gen pred a =
-    case [x | x <- shrink a, pred x == Nothing] of
+    case [x | x <- take 50 $ shrink a, pred x == Nothing] of
         [] -> generate gen
-        (x:_) -> return x
+        xs -> generate $ oneof (map return xs)
 
 traceMatch :: Interaction (Protocol t) -> ST t -> Bool
 traceMatch (Got (Pure x)) (Get _ _) = True
@@ -233,7 +234,7 @@ runErlang self mod fun st = specCheck (runfun self) st
                 id2 <- forkIO $ haskellLoop ch mbox
                 waitToBeKilled ch
                 finish mbox id1 id2
-                return ()
+                killAcc ch
 
         finish mbox id1 id2 =
             do
@@ -276,6 +277,8 @@ specCheck impl t = loop 100
                             hPutStr stderr $ "\r                  \r"
                             putStrLn $ "Failed after "++(show (100 - n))++" tests"
                             shrinkLoop 0 (fromJust b) w
+                            putStrLn $ "\n~~~~~\n"
+                            shrinkLoop 100 (fromJust b) w
 
         shrinkLoop 0 s trace =
                         do
@@ -287,10 +290,9 @@ specCheck impl t = loop 100
                             --sequence_ $ map (putStrLn . ("    "++)) $ concat $ map (prettyTrace (2*(maxLen w))) w
                             putStrLn "---"
                             return ()
-        {-
         shrinkLoop n s trace =
                         do
-                            hPutStr stderr $ "\rshrinking...               \r"
+                            hPutStr stderr $ "\rShrinking ("++(show n)++")...               \r"
                             ch <- new
                             forkIO $ impl (bidirect ch)
                             (b, w) <- runWriterT $ sessionShrink (length trace) (map (fmap (fmap fst)) trace) t ch
@@ -298,7 +300,6 @@ specCheck impl t = loop 100
                             case b of
                                 FailedToShrink -> shrinkLoop (n-1) s trace
                                 FailingPredicate s' -> shrinkLoop (n-1) s' w
-        -}
 
 maxLen = maximum . (map (length . extract))
     where
