@@ -1,3 +1,4 @@
+import Test.QuickCheck
 import ST
 import Foreign.Erlang
 
@@ -7,9 +8,11 @@ bookShop = bookShop' ([] :: [Int])
 
 bookShop' :: [Int] -> ST ErlType
 bookShop' bs =
-    Send book $ \b ->
+    Send posNum $ \b ->
     let bs' = b:bs in
-    ("another", bookShop' bs') <|> ("request", Get (permutationOf bs') cont)
+    Choose
+        (frequency [(1, return 0), (1, return 1)])
+        [("another", bookShop' bs'), ("request", Get (permutationOf bs') cont)]
 
 cont :: [Int] -> ST ErlType
 cont bs = ("another", bookShop' bs) <|> ("done", End)
