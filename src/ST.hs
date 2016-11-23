@@ -5,6 +5,7 @@
              FlexibleContexts,
              UndecidableInstances #-}
 module ST where
+import Predicate
 import Debug.Trace
 import Prelude hiding (any)
 import Test.QuickCheck
@@ -16,11 +17,6 @@ import Control.Concurrent
 import Control.Monad.Writer.Lazy
 import Control.Concurrent.Chan
 import Typeclasses
-
-type Predicate a = (Gen a, a -> Maybe String)
-
-predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
-predicate s (g, p) = (g, \a -> guard (not (p a)) >> return s)
 
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
@@ -327,42 +323,6 @@ printTrace (Got (Pure x))   = "Got ("++x++")"
 printTrace (Got (Choice s)) = "Branched "++s
 printTrace (Sent (Pure x))  = "Sent ("++x++")"
 printTrace (Sent (Choice s)) = "Chose "++s
-
--- Some generator-predicate pairs
-posNum :: (Ord a, Num a, Arbitrary a) => Predicate a
-posNum = predicate "posNum" (fmap ((+1) . abs) arbitrary, (>0))
-
-lessThan :: (Ord a, Arbitrary a, Show a) => a -> Predicate a
-lessThan v = predicate (show v ++ " >") (arbitrary `suchThat` (<v), (<v))
-
-is :: (Eq a, Show a) => a -> Predicate a
-is a = predicate ("is "++(show a)) (return a,(a==))
-
-permutationOf :: (Ord a, Show a) => [a] -> Predicate [a]
-permutationOf bs = predicate ("permutationOf " ++ (show bs)) (shuffle bs, (((sort bs) ==) . sort))
-
-inRange :: (Ord a, Show a, Arbitrary a) => (a, a) -> Predicate a
-inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x -> x >= l && x <= h), (\x -> x >= l && x <= h))
-
-(|||) :: Predicate a -> Predicate a -> Predicate a
-(lg, l) ||| (rg, r) = (oneof [lg, rg], disj l r)
-    where
-        disj l r a = do
-                        sl <- l a
-                        sr <- r a
-                        return $ "("++ sl ++ " || " ++ sr ++ ")"
-
-(&&&) :: Predicate a -> Predicate a -> Predicate a
-(lg, l) &&& (rg, r) = (oneof [lg, rg] `suchThat` (\a -> p a == Nothing), p)
-    where
-        p a = case r a of
-                Nothing -> case l a of
-                            Nothing -> Nothing
-                            Just s  -> Just s
-                Just s  -> Just s
-
-wildcard :: (Arbitrary a) => Predicate a
-wildcard = (arbitrary, const Nothing)
 
 l <|> r = Choose (oneof [return 0, return 1]) [l, r]
 infixr 1 <|>

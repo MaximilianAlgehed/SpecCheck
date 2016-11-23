@@ -8,7 +8,7 @@ bookShop = bookShop' ([] :: [Int])
 
 bookShop' :: [Int] -> ST ErlType
 bookShop' bs =
-    Send posNum $ \b ->
+    Send wildcard $ \b ->
     let bs' = b:bs in
     Choose
         (frequency [(1, return 0), (1, return 1)])
