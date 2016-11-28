@@ -12,6 +12,9 @@ predicate s (g, p) = Predicate g (\a -> guard (not (p a)) >> return s) s
 posNum :: (Ord a, Num a, Arbitrary a) => Predicate a
 posNum = predicate "posNum " ((fmap abs arbitrary) `suchThat` (>0), (>0))
 
+negNum :: (Ord a, Num a, Arbitrary a) => Predicate a
+negNum = predicate "negNum " ((fmap (negate . abs) arbitrary) `suchThat` (<0), (<0))
+
 lessThan :: (Ord a, Arbitrary a, Show a) => a -> Predicate a
 lessThan v = predicate (show v ++ " > ") (arbitrary `suchThat` (<v), (<v))
 
