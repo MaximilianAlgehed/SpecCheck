@@ -330,6 +330,17 @@ checkCoherence (Branch g conts) =
 checkCoherence (Choose g conts) = checkCoherence (Branch g conts)
 checkCoherence End              = return True
 
+coherent :: ST c -> IO ()
+coherent st = coherent' st 100
+    where
+        coherent' _ 0 = putStrLn "Passed"
+        coherent' st n = do
+                            b <- checkCoherence st
+                            if b then
+                                coherent' st (n-1)
+                            else
+                                return ()
+
 tryGen :: Gen a -> IO (Maybe a)
 tryGen = (timeout 1000000) . generate 
 
