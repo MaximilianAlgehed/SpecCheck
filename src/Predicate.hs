@@ -1,7 +1,12 @@
 module Predicate where
 import Test.QuickCheck
+import Control.Monad
+import Data.List
 
 type Predicate a = (Gen a, a -> Maybe String)
+
+generator = fst
+predf = snd
 
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
 predicate s (g, p) = (g, \a -> guard (not (p a)) >> return s)
@@ -38,15 +43,6 @@ inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x
                             Nothing -> Nothing
                             Just s  -> Just s
                 Just s  -> Just s
-
--- conjunction over a list
-andl :: Predicate a -> Predicate [a]
-andl (g, p) = (replicateM g, test)           
-    where
-        test []     = Nothing
-        test (x:xs) = case p x of
-                        Nothing -> test xs
-                        Just s  -> Just s
 
 wildcard :: (Arbitrary a) => Predicate a
 wildcard = (arbitrary, const Nothing)

@@ -5,6 +5,7 @@
              FlexibleContexts,
              UndecidableInstances #-}
 module ST where
+import System.Timeout
 import Predicate
 import Debug.Trace
 import Prelude hiding (any)
@@ -43,24 +44,24 @@ sessionTest :: (Show c, BiChannel ch c)
             => ST c
             -> ch (Protocol c)
             -> WriterT (Log (c, String)) IO (Maybe String)
-sessionTest (Send (gen, _) cont) ch =
+sessionTest (Send p cont) ch =
     do
-        value <- lift $ generate gen
+        value <- lift $ generate (generator p)
         lift $ put ch $ Pure (embed value)
         tell [Sent (Pure (embed value, show value))]
         sessionTest (cont value) ch
-sessionTest (Get (_, pred) cont) ch =
+sessionTest (Get p cont) ch =
     do
         Pure mv <- lift $ get ch
         case extract mv of
-            Just value -> if pred value == Nothing then
+            Just value -> if predf p value == Nothing then
                             do
                                 tell [Got (Pure (mv, show value))]
                                 sessionTest (cont value) ch
                           else
                             do
                                 tell [Got (Pure (mv, show value))]
-                                return $ fmap (++" "++(show value)) (pred value)
+                                return $ fmap (++" "++(show value)) (predf p value)
             Nothing    -> do 
                             tell [Got (Pure (mv, show mv))]
                             return $ Just "Type error!"
@@ -297,6 +298,31 @@ specCheck impl t = loop 100
                                 FailedToShrink -> shrinkLoop (n-1) s trace
                                 FailingPredicate s' -> shrinkLoop (n-1) s' w
 
+checkCoherence :: ST c -> IO Bool
+checkCoherence (Send p cont) =
+    do
+        mv <- tryGen (generator p)
+        case mv of
+            Nothing    -> return False
+            Just value -> case predf p value of
+                            Nothing -> checkCoherence (cont value)
+                            Just s  -> do
+                                        putStrLn "Failed with: "
+                                        putStrLn s
+                                        return False
+checkCoherence (Get p cont)     = checkCoherence (Send p cont)
+checkCoherence (Branch g conts) =
+    do
+        mi <- tryGen g
+        case mi of
+            Nothing -> return False
+            Just i  -> checkCoherence $ snd (conts !! i)
+checkCoherence (Choose g conts) = checkCoherence (Branch g conts)
+checkCoherence End              = return True
+
+tryGen :: Gen a -> IO (Maybe a)
+tryGen = (timeout 1000000) . generate 
+
 maxLen = maximum . (map (length . extract))
     where
         extract (Got (Pure s)) = s
@@ -324,6 +350,7 @@ printTrace (Got (Choice s)) = "Branched "++s
 printTrace (Sent (Pure x))  = "Sent ("++x++")"
 printTrace (Sent (Choice s)) = "Chose "++s
 
+-- Some syntax
 l <|> r = Choose (oneof [return 0, return 1]) [l, r]
 infixr 1 <|>
 
