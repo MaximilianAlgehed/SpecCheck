@@ -13,8 +13,8 @@
              FlexibleContexts,
              UndecidableInstances #-}
 module ST where
-import System.Timeout
 import Predicate
+import System.Timeout
 import Debug.Trace
 import Prelude hiding (any)
 import Test.QuickCheck
@@ -312,11 +312,13 @@ checkCoherence (Send p cont) =
         mv <- tryGen (generator p)
         case mv of
             Nothing    -> do
+                            hPutStr stderr $ "\r                  \r"
                             putStrLn $ "Failed with inability to generate: " ++ name p
                             return False
             Just value -> case predf p value of
                             Nothing -> checkCoherence (cont value)
                             Just s  -> do
+                                        hPutStr stderr $ "\r                  \r"
                                         putStrLn "Failed with: "
                                         putStrLn s
                                         return False
@@ -335,14 +337,26 @@ coherent st = coherent' st 100
     where
         coherent' _ 0 = putStrLn "Passed"
         coherent' st n = do
+                            hPutStr stderr $ "\r                  \r"
+                            hPutStr stderr $ show n
                             b <- checkCoherence st
                             if b then
                                 coherent' st (n-1)
                             else
                                 return ()
 
+-- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: Gen a -> IO (Maybe a)
-tryGen = (timeout 1000000) . generate 
+tryGen gen = timeout 1000000 (specialGenerate gen)
+
+-- We need to do this because `generate gen` generates a thunk
+-- which starts getting evaluated, this messes up `timeout`,
+-- so we instead defer generation of the thunk.
+specialGenerate :: Gen a -> IO a
+specialGenerate gen =
+    do
+        v <- generate gen
+        v `seq` (return v) 
 
 maxLen = maximum . (map (length . extract))
     where
