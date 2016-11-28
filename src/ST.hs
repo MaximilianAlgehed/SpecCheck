@@ -1,3 +1,11 @@
+{-
+ - This file needs some major refactoring,
+ - if you are afraid of ugly code, look away now.
+ -
+ - We should try to do something about the (a -> Maybe String)
+ - thing, it must be possible to abstract this somehow.
+ -}
+
 {-# LANGUAGE GADTs,
              TypeOperators,
              MultiParamTypeClasses,
@@ -105,18 +113,18 @@ sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the 
 sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
 sessionShrink n (x:xs) st ch
     | traceMatch x st   = case (x, st) of
-                            (Got (Pure _), Get (_, pred) cont) ->
+                            (Got (Pure _), Get p cont) ->
                                 do
                                     Pure mv <- lift $ get ch
                                     case extract mv of
-                                        Just value -> if pred value == Nothing then
+                                        Just value -> if predf p value == Nothing then
                                                         do
                                                             tell [Got (Pure (mv, (show value)))]
                                                             sessionShrink (n-1) xs (cont value) ch
                                                       else
                                                         do
                                                             tell [Got (Pure (mv, (show value)))]
-                                                            return $ fromMaybeSS $ fmap (++" "++(show value)) (pred value)
+                                                            return $ fromMaybeSS $ fmap (++" "++(show value)) (predf p value)
                                         Nothing    -> do 
                                                         tell [Got (Pure (mv, (show mv)))]
                                                         return $ FailingPredicate "Type error!"
@@ -136,10 +144,10 @@ sessionShrink n (x:xs) st ch
                                         Pure v -> do
                                                 tell [Got (Pure (v, (show v)))]
                                                 return $ FailingPredicate "Type error!"
-                            (Sent (Pure x), Send (gen, pred) cont) -> 
+                            (Sent (Pure x), Send p cont) -> 
                                 do
                                     let Just x' = extract x
-                                    value <- lift $ shrinkValue gen pred x'
+                                    value <- lift $ shrinkValue (generator p) (predf p) x'
                                     lift $ put ch $ Pure (embed value)
                                     tell [Sent (Pure (embed value, (show value)))]
                                     sessionShrink (n-1) xs (cont value) ch
@@ -152,24 +160,24 @@ sessionShrink n (x:xs) st ch
                                     sessionShrink (n-1) xs cont ch
     | otherwise         = sessionShrink n xs st ch 
 -- We have given up on following the trace
-sessionShrink n [] (Send (gen, _) cont) ch =
+sessionShrink n [] (Send p cont) ch =
     do
-        value <- lift $ generate gen
+        value <- lift $ generate (generator p)
         lift $ put ch $ Pure (embed value)
         tell [Sent (Pure (embed value, (show value)))]
         sessionShrink (n-1) [] (cont value) ch
-sessionShrink n [] (Get (_, pred) cont) ch =
+sessionShrink n [] (Get p cont) ch =
     do
         Pure mv <- lift $ get ch
         case extract mv of
-            Just value -> if pred value == Nothing then
+            Just value -> if predf p value == Nothing then
                             do
                                 tell [Got (Pure (mv, (show value)))]
                                 sessionShrink (n-1) [] (cont value) ch
                           else
                             do
                                 tell [Got (Pure (mv, (show value)))]
-                                return $ fromMaybeSS $ fmap (++" "++(show value)) (pred value)
+                                return $ fromMaybeSS $ fmap (++" "++(show value)) (predf p value)
             Nothing    -> do 
                             tell [Got (Pure (mv, (show mv)))]
                             return $ FailingPredicate "Type error!"
@@ -203,10 +211,10 @@ shrinkValue gen pred a =
 
 traceMatch :: Interaction (Protocol t) -> ST t -> Bool
 traceMatch (Got (Pure x)) (Get _ _) = True
-traceMatch (Sent (Pure x)) (Send (gen, p) _) =
+traceMatch (Sent (Pure x)) (Send p _) =
     let x' = extract x in
     case x' of
-        Just a  -> p a == Nothing -- Predicate holds / doesn't hold
+        Just a  -> predf p a == Nothing -- Predicate holds / doesn't hold
         Nothing -> False -- Type error
 traceMatch (Got (Choice s)) (Branch _ xs) = s `elem` [fst x | x <- xs]
 traceMatch (Sent (Choice s)) (Choose _ xs) = s `elem` [fst x | x <- xs]
