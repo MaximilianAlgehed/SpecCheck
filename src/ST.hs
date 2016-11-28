@@ -303,7 +303,9 @@ checkCoherence (Send p cont) =
     do
         mv <- tryGen (generator p)
         case mv of
-            Nothing    -> return False
+            Nothing    -> do
+                            putStrLn $ "Failed with inability to generate: " ++ name p
+                            return False
             Just value -> case predf p value of
                             Nothing -> checkCoherence (cont value)
                             Just s  -> do

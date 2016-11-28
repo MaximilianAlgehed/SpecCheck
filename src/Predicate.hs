@@ -3,10 +3,7 @@ import Test.QuickCheck
 import Control.Monad
 import Data.List
 
-type Predicate a = (Gen a, a -> Maybe String)
-
-generator = fst
-predf = snd
+data Predicate a = Predicate {generator :: Gen a, predf :: a -> Maybe String, name :: String}
 
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
 predicate s (g, p) = (g, \a -> guard (not (p a)) >> return s)
