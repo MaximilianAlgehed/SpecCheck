@@ -345,6 +345,9 @@ coherent st = coherent' st 100
                             else
                                 return ()
 
+shrinkCoherence :: ST c -> Log (c, String) -> IO ()
+shrinkCoherence = undefined
+
 -- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: Gen a -> IO (Maybe a)
 tryGen gen = timeout 1000000 (specialGenerate gen)
