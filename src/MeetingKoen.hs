@@ -26,8 +26,25 @@ buyer' :: Double -> ST ErlType
 buyer' price = Send (inRange (0, price)) $ \ reqP -> 
                ("response", Get (inRange (reqP, price)) continue) <&> ("fault", End)
 
+-- "Case study":
+-- 1. fix the first bug by making the server correct
+-- 2. Try to fix the non-termination by altering the "price" parameter
+-- 3. Fix the fact that the server may "accept" a price that is too high
+
 continue :: Double -> ST ErlType
 continue brokerPrice = ("accept", End) <&> ("request", buyer' brokerPrice)
+
+buyer'' :: Double -> ST ErlType
+buyer'' price = Send (inRange (0, price+0.5)) $ \reqP ->
+                ("response", Get (inRange (reqP, price)) $ \bp ->
+                    if bp <= reqP then
+                        End
+                    else
+                        buyer' bp
+                ) <&> ("fault", End)
+
+buyer2 :: ST ErlType
+buyer2 = buyer'' 100
 
 {- The process of iterating a specification, to show that "checkCoherence" can be useful -}
 type Message = Int
