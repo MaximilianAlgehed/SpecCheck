@@ -44,5 +44,19 @@ inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x
                             Just s  -> Just s
                 Just s  -> Just s
 
+(.*.) :: Predicate a -> Predicate b -> Predicate (a, b)
+(Predicate lg l ln) .*. (Predicate rg r rn) = Predicate (do
+                                                            l <- lg
+                                                            r <- rg
+                                                            return (l, r))
+                                                        p
+                                                        (ln ++ " .*. " ++ rn)
+    where
+        p (a, b) = case r b of
+                        Nothing -> case l a of
+                                    Nothing -> Nothing
+                                    Just s  -> Just s
+                        Just s  -> Just s
+
 wildcard :: (Arbitrary a) => Predicate a
 wildcard = Predicate arbitrary (const Nothing) "_"

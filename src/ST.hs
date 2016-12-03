@@ -13,6 +13,7 @@
              FlexibleContexts,
              UndecidableInstances #-}
 module ST where
+import Control.DeepSeq
 import Predicate
 import System.Timeout
 import Debug.Trace
@@ -35,8 +36,8 @@ erlBool False = ErlAtom "false"
 -- check if what the server is saying is actually true
 -- etc.
 data ST c where
-    Send   :: (Arbitrary a, Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c
-    Get    :: (Arbitrary a, Show a, a :<: c) => Predicate a -> (a -> ST c) -> ST c 
+    Send   :: (Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> ST c) -> ST c
+    Get    :: (Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> ST c) -> ST c 
     Choose :: Gen Int -> [(String, ST c)] -> ST c
     Branch :: Gen Int -> [(String, ST c)] -> ST c
     End    :: ST c
@@ -349,17 +350,17 @@ shrinkCoherence :: ST c -> Log (c, String) -> IO ()
 shrinkCoherence = undefined
 
 -- Try to generate a value, if it is not done in 1 second, give up
-tryGen :: Gen a -> IO (Maybe a)
+tryGen :: (NFData a) => Gen a -> IO (Maybe a)
 tryGen gen = timeout 1000000 (specialGenerate gen)
 
 -- We need to do this because `generate gen` generates a thunk
 -- which starts getting evaluated, this messes up `timeout`,
 -- so we instead defer generation of the thunk.
-specialGenerate :: Gen a -> IO a
+specialGenerate :: (NFData a) => Gen a -> IO a
 specialGenerate gen =
     do
         v <- generate gen
-        v `seq` (return v) 
+        v `deepseq` return v
 
 maxLen = maximum . (map (length . extract))
     where
