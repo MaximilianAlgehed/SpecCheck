@@ -36,11 +36,11 @@ continue brokerPrice = ("accept", End) <&> ("request", buyer' brokerPrice)
 
 buyer'' :: Double -> ST ErlType
 buyer'' price = Send (inRange (0, price+0.5)) $ \reqP ->
-                ("response", Get (inRange (reqP, price)) $ \bp ->
+                ("response", Get (inRange (0, price+0.5)) $ \bp ->
                     if bp <= reqP then
                         End
                     else
-                        buyer' bp
+                        buyer'' bp
                 ) <&> ("fault", End)
 
 buyer2 :: ST ErlType
