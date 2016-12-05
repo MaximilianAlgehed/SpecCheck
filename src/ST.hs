@@ -307,44 +307,76 @@ specCheck impl t = loop 100
                                 FailedToShrink -> shrinkLoop (n-1) s trace
                                 FailingPredicate s' -> shrinkLoop (n-1) s' w
 
-checkCoherence :: ST c -> IO Bool
+checkCoherence :: ST c -> WriterT (Log (c, String)) IO Bool
 checkCoherence (Send p cont) =
     do
-        mv <- tryGen (generator p)
+        mv <- lift $ tryGen (generator p)
         case mv of
-            Nothing    -> do
-                            hPutStr stderr $ "\r                  \r"
-                            putStrLn $ "Failed with inability to generate: " ++ name p
-                            return False
+            Nothing    -> lift $ do
+                                    hPutStr stderr $ "\r                  \r"
+                                    putStrLn $ "Failed with inability to generate: " ++ name p
+                                    return False
             Just value -> case predf p value of
-                            Nothing -> checkCoherence (cont value)
-                            Just s  -> do
-                                        hPutStr stderr $ "\r                  \r"
-                                        putStrLn "Failed with: "
-                                        putStrLn s
-                                        return False
-checkCoherence (Get p cont)     = checkCoherence (Send p cont)
+                            Nothing -> do
+                                        tell [Sent (Pure (embed value, show value))]
+                                        checkCoherence (cont value)
+                            Just s  -> lift $ do
+                                                hPutStr stderr $ "\r                  \r"
+                                                putStrLn "Failed with: "
+                                                putStrLn s
+                                                return False
+checkCoherence (Get p cont)     =
+    do
+        mv <- lift $ tryGen (generator p)
+        case mv of
+            Nothing    -> lift $ do
+                                    hPutStr stderr $ "\r                  \r"
+                                    putStrLn $ "Failed with inability to generate: " ++ name p
+                                    return False
+            Just value -> case predf p value of
+                            Nothing -> do
+                                        tell [Got (Pure (embed value, show value))]
+                                        checkCoherence (cont value)
+                            Just s  -> lift $ do
+                                                hPutStr stderr $ "\r                  \r"
+                                                putStrLn "Failed with: "
+                                                putStrLn s
+                                                return False
 checkCoherence (Branch g conts) =
     do
-        mi <- tryGen g
+        mi <- lift $ tryGen g
         case mi of
             Nothing -> return False
-            Just i  -> checkCoherence $ snd (conts !! i)
-checkCoherence (Choose g conts) = checkCoherence (Branch g conts)
+            Just i  -> do
+                        let (name, cont) = conts!!(i `mod` (length conts))
+                        tell [Got (Choice name)]
+                        checkCoherence $ cont
+checkCoherence (Choose g conts) = do
+        mi <- lift $ tryGen g
+        case mi of
+            Nothing -> return False
+            Just i  -> do
+                        let (name, cont) = conts!!(i `mod` (length conts))
+                        tell [Sent (Choice name)]
+                        checkCoherence $ cont
 checkCoherence End              = return True
 
 coherent :: ST c -> IO ()
 coherent st = coherent' st 100
     where
-        coherent' _ 0 = putStrLn "Passed"
+        coherent' _ 0 = putStrLn "\rPassed"
         coherent' st n = do
                             hPutStr stderr $ "\r                  \r"
                             hPutStr stderr $ show n
-                            b <- checkCoherence st
+                            (b, log) <- runWriterT $ checkCoherence st
                             if b then
                                 coherent' st (n-1)
                             else
-                                return ()
+                                do
+                                    putStrLn "In:"
+                                    putStrLn "---"
+                                    sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap (fmap snd)) log)
+                                    return ()
 
 shrinkCoherence :: ST c -> Log (c, String) -> IO ()
 shrinkCoherence = undefined
