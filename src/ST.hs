@@ -12,8 +12,12 @@
              TypeSynonymInstances,
              FlexibleInstances,
              FlexibleContexts,
+             KindSignatures,
+             RankNTypes,
              UndecidableInstances #-}
 module ST where
+import CSpec
+import Control.Monad.Trans
 import Control.DeepSeq
 import Predicate
 import System.Timeout
@@ -22,53 +26,43 @@ import Prelude hiding (any)
 import Test.QuickCheck
 import Data.List hiding (any)
 import Foreign.Erlang
-import BiCh 
+import BiCh as BCH
 import System.IO
 import Control.Concurrent
 import Control.Monad.Writer.Lazy
 import Control.Concurrent.Chan
 import Typeclasses
 import Control.Monad.Cont
+import Control.Monad.Trans.Identity
 
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
 
--- It would be good to get a monad in here so we can
--- do some side-effects, like reading the database to
--- check if what the server is saying is actually true
--- etc.
-data ST c where
-    Send   :: (Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> ST c) -> ST c
-    Get    :: (Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> ST c) -> ST c 
-    Choose :: Gen Int -> [(String, ST c)] -> ST c
-    Branch :: Gen Int -> [(String, ST c)] -> ST c
-    End    :: ST c
-
-dual :: ST a -> ST a
-dual (Send pred cont) = Get pred (dual . cont)
-dual (Get pred cont)  = Send pred (dual . cont)
-dual (Choose gen cs)  = Branch gen (map (\(s,t) -> (s, dual t)) cs)
-dual (Branch gen cs)  = Choose gen (map (\(s,t) -> (s, dual t)) cs)
+dual :: (MonadTrans m, Functor (m IO)) => ST m a -> ST m a
+dual (Send pred cont) = Get pred $ \a -> fmap dual (cont a)
+dual (Get pred cont)  = Send pred $ \a -> fmap dual (cont a)
 dual End              = End
 
-sessionTest :: (Show c, BiChannel ch c)
-            => ST c
+sessionTest :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
+            => ST m c
             -> ch (Protocol c)
-            -> WriterT (Log (c, String)) IO (Maybe String)
+            -> WriterT (Log (c, String)) (m IO) (Maybe String)
 sessionTest (Send p cont) ch =
     do
-        value <- lift $ generate (generator p)
-        lift $ put ch $ Pure (embed value)
+        value <- lift $ lift $ generate (generator p)
+        lift $ lift $ put ch $ Pure (embed value)
         tell [Sent (Pure (embed value, show value))]
-        sessionTest (cont value) ch
+        c <- lift $ cont value
+        sessionTest c ch
 sessionTest (Get p cont) ch =
     do
-        Pure mv <- lift $ get ch
+        Pure mv <- lift $ lift $ BCH.get ch
         case extract mv of
             Just value -> if predf p value == Nothing then
                             do
                                 tell [Got (Pure (mv, show value))]
-                                sessionTest (cont value) ch
+                                c <- lift $ cont value
+                                sessionTest c ch
                           else
                             do
                                 tell [Got (Pure (mv, show value))]
@@ -76,27 +70,6 @@ sessionTest (Get p cont) ch =
             Nothing    -> do 
                             tell [Got (Pure (mv, show mv))]
                             return $ Just "Type error!"
-sessionTest (Choose gen choices) ch =
-    do
-        choice <- lift $ generate gen
-        let (name, cont) = choices!!(choice `mod` (length choices))
-        tell [Sent (Choice name)]
-        lift $ put ch (Choice name)
-        sessionTest cont ch
-sessionTest (Branch _ choices) ch =
-    do
-        choice <- lift $ get ch
-        case choice of
-            Choice s
-                | s `elem` (map fst choices) -> do
-                                                    tell [Got (Choice s)]
-                                                    sessionTest (fromJust (lookup s choices)) ch
-                | otherwise -> do
-                                tell [Got (Choice s)]
-                                return $ Just "Tried to make invalid call!"
-            Pure v -> do
-                    tell [Got $ Pure (v, show v)]
-                    return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
 data ShrinkStatus = FailedToShrink | FailingPredicate String
@@ -105,12 +78,12 @@ fromMaybeSS :: Maybe String -> ShrinkStatus
 fromMaybeSS Nothing = FailedToShrink
 fromMaybeSS (Just s) = FailingPredicate s
 
-sessionShrink :: (Show c, BiChannel ch c)
+sessionShrink :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
             => Int
             -> Log c
-            -> ST c
+            -> ST m c
             -> ch (Protocol c)
-            -> WriterT (Log (c, String)) IO ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
+            -> WriterT (Log (c, String)) (m IO) ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
                                                          -- of "Log String"
 sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the original trace
 sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
@@ -118,12 +91,13 @@ sessionShrink n (x:xs) st ch
     | traceMatch x st   = case (x, st) of
                             (Got (Pure _), Get p cont) ->
                                 do
-                                    Pure mv <- lift $ get ch
+                                    Pure mv <- lift $ lift $ BCH.get ch
                                     case extract mv of
                                         Just value -> if predf p value == Nothing then
                                                         do
                                                             tell [Got (Pure (mv, (show value)))]
-                                                            sessionShrink (n-1) xs (cont value) ch
+                                                            c <- lift $ cont value
+                                                            sessionShrink (n-1) xs c ch
                                                       else
                                                         do
                                                             tell [Got (Pure (mv, (show value)))]
@@ -131,52 +105,32 @@ sessionShrink n (x:xs) st ch
                                         Nothing    -> do 
                                                         tell [Got (Pure (mv, (show mv)))]
                                                         return $ FailingPredicate "Type error!"
-                            (Got (Choice s), Branch _ choices) ->
-                                do
-                                    choice <- lift $ get ch
-                                    case choice of
-                                        Choice s
-                                            | s `elem` (map fst choices) ->
-                                                do
-                                                  tell [Got (Choice s)]
-                                                  sessionShrink (n-1) xs (fromJust (lookup s choices)) ch
-                                            | otherwise ->
-                                                do
-                                                  tell [Got (Choice s)]
-                                                  return $ FailingPredicate "Tried to make invalid call!"
-                                        Pure v -> do
-                                                tell [Got (Pure (v, (show v)))]
-                                                return $ FailingPredicate "Type error!"
                             (Sent (Pure x), Send p cont) -> 
                                 do
                                     let Just x' = extract x
-                                    value <- lift $ shrinkValue (generator p) (predf p) x'
-                                    lift $ put ch $ Pure (embed value)
+                                    value <- lift $ lift $ shrinkValue (generator p) (predf p) x'
+                                    lift $ lift $ put ch $ Pure (embed value)
                                     tell [Sent (Pure (embed value, (show value)))]
-                                    sessionShrink (n-1) xs (cont value) ch
-                            (_, Choose gen choices) ->
-                                do
-                                    choice <- lift $ generate gen
-                                    let (name, cont) = choices!!(choice `mod` (length choices))
-                                    tell [Sent (Choice name)]
-                                    lift $ put ch (Choice name)
-                                    sessionShrink (n-1) xs cont ch
+                                    c <- lift $ cont value
+                                    sessionShrink (n-1) xs c ch
     | otherwise         = sessionShrink n xs st ch 
 -- We have given up on following the trace
 sessionShrink n [] (Send p cont) ch =
     do
-        value <- lift $ generate (generator p)
-        lift $ put ch $ Pure (embed value)
+        value <- lift $ lift $ generate (generator p)
+        lift $ lift $ put ch $ Pure (embed value)
         tell [Sent (Pure (embed value, (show value)))]
-        sessionShrink (n-1) [] (cont value) ch
+        c <- lift $ cont value
+        sessionShrink (n-1) [] c ch
 sessionShrink n [] (Get p cont) ch =
     do
-        Pure mv <- lift $ get ch
+        Pure mv <- lift $ lift $ BCH.get ch
         case extract mv of
             Just value -> if predf p value == Nothing then
                             do
                                 tell [Got (Pure (mv, (show value)))]
-                                sessionShrink (n-1) [] (cont value) ch
+                                c <- lift $ cont value
+                                sessionShrink (n-1) [] c ch
                           else
                             do
                                 tell [Got (Pure (mv, (show value)))]
@@ -184,27 +138,6 @@ sessionShrink n [] (Get p cont) ch =
             Nothing    -> do 
                             tell [Got (Pure (mv, (show mv)))]
                             return $ FailingPredicate "Type error!"
-sessionShrink n [] (Choose gen choices) ch =
-    do
-        choice <- lift $ generate gen
-        let (name, cont) = choices!!(choice `mod` (length choices))
-        tell [Sent (Choice name)]
-        lift $ put ch (Choice name)
-        sessionShrink (n-1) [] cont ch
-sessionShrink n [] (Branch _ choices) ch =
-    do
-        choice <- lift $ get ch
-        case choice of
-            Choice s
-                | s `elem` (map fst choices) -> do
-                                                    tell [Got (Choice s)]
-                                                    sessionShrink (n-1) [] (fromJust (lookup s choices)) ch
-                | otherwise -> do
-                                tell [Got (Choice s)]
-                                return $ FailingPredicate "Tried to make invalid call!"
-            Pure v -> do
-                    tell [Got (Pure (v, (show v)))]
-                    return $ FailingPredicate "Type error!"
 
 shrinkValue :: (Arbitrary a) => Gen a -> (a -> Maybe String) -> a -> IO a
 shrinkValue gen pred a =
@@ -212,24 +145,26 @@ shrinkValue gen pred a =
         [] -> generate gen
         xs -> generate $ oneof (map return xs)
 
-traceMatch :: Interaction (Protocol t) -> ST t -> Bool
+traceMatch :: Interaction (Protocol t) -> ST m t -> Bool
 traceMatch (Got (Pure x)) (Get _ _) = True
 traceMatch (Sent (Pure x)) (Send p _) =
     let x' = extract x in
     case x' of
         Just a  -> predf p a == Nothing -- Predicate holds / doesn't hold
         Nothing -> False -- Type error
-traceMatch (Got (Choice s)) (Branch _ xs) = s `elem` [fst x | x <- xs]
-traceMatch (Sent (Choice s)) (Choose _ xs) = s `elem` [fst x | x <- xs]
 traceMatch _ _ = False
 
-runErlang :: (t :<: ErlType, Show t)
+runErlangT :: (t :<: ErlType, Show t, MonadTrans m, Monad (m IO))
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
-          -> ST t -- The session type for the interaction
+          -> CSpecT m t a -- The session type for the interaction
+          -> (forall a. m IO a -> IO a)
           -> IO ()
-runErlang self mod fun st = specCheck (runfun self) st
+runErlangT self mod fun spec interp =
+    do
+        st <- interp $ runContT spec (fmap return $ const End)
+        specCheck (runfun self) st interp
     where
         runfun :: (t :<: ErlType) => Self -> P Chan (Protocol t) -> IO ()
         runfun self ch =
@@ -259,16 +194,25 @@ runErlang self mod fun st = specCheck (runfun self) st
         
         haskellLoop ch mbox =
             do
-                m <- get ch
+                m <- BCH.get ch
                 mboxSend mbox (Short "erl") (Right "p") (mboxSelf mbox, m)
                 haskellLoop ch mbox
 
--- Run some tests
-specCheck :: (BiChannel ch c, Show c)
-          => (ch (Protocol c) -> IO ()) -- Function to test
-          -> ST c                       -- The session type for the interaction
+runErlang :: (t :<: ErlType, Show t)
+          => Self -- Created by "createSelf \"name@localhost\""
+          -> String -- module name
+          -> String -- function name
+          -> CSpec t a -- The session type for the interaction
           -> IO ()
-specCheck impl t = loop 100
+runErlang self mod fun spec = runErlangT self mod fun spec runIdentityT
+
+-- Run some tests
+specCheck :: (BiChannel ch c, Show c, MonadTrans m, Monad (m IO))
+          => (ch (Protocol c) -> IO ()) -- Function to test
+          -> ST m c                     -- The session type for the interaction
+          -> (forall a. m IO a -> IO a) 
+          -> IO ()
+specCheck impl t interp = loop 100
     where
         loop 0 = putStrLn "\rO.K"
         loop n = do
@@ -276,7 +220,7 @@ specCheck impl t = loop 100
                     hPutStr stderr $ show n
                     ch <- new
                     forkIO $ impl (bidirect ch)
-                    (b, w) <- runWriterT $ sessionTest t ch
+                    (b, w) <- fmap interp runWriterT $ sessionTest t ch
                     kill ch
                     if b == Nothing then
                         loop (n-1)
@@ -303,12 +247,13 @@ specCheck impl t = loop 100
                             hPutStr stderr $ "\rShrinking ("++(show n)++")...               \r"
                             ch <- new
                             forkIO $ impl (bidirect ch)
-                            (b, w) <- runWriterT $ sessionShrink (length trace) (map (fmap (fmap fst)) trace) t ch
+                            (b, w) <- fmap interp runWriterT $ sessionShrink (length trace) (map (fmap (fmap fst)) trace) t ch
                             kill ch
                             case b of
                                 FailedToShrink -> shrinkLoop (n-1) s trace
                                 FailingPredicate s' -> shrinkLoop (n-1) s' w
 
+{-
 checkCoherence :: ST c -> WriterT (Log (c, String)) IO Bool
 checkCoherence (Send p cont) =
     do
@@ -327,7 +272,7 @@ checkCoherence (Send p cont) =
                                                 putStrLn "Failed with: "
                                                 putStrLn s
                                                 return False
-checkCoherence (Get p cont)     =
+checkCoherence (Get p cont)  =
     do
         mv <- lift $ tryGen (generator p)
         case mv of
@@ -344,24 +289,7 @@ checkCoherence (Get p cont)     =
                                                 putStrLn "Failed with: "
                                                 putStrLn s
                                                 return False
-checkCoherence (Branch g conts) =
-    do
-        mi <- lift $ tryGen g
-        case mi of
-            Nothing -> return False
-            Just i  -> do
-                        let (name, cont) = conts!!(i `mod` (length conts))
-                        tell [Got (Choice name)]
-                        checkCoherence $ cont
-checkCoherence (Choose g conts) = do
-        mi <- lift $ tryGen g
-        case mi of
-            Nothing -> return False
-            Just i  -> do
-                        let (name, cont) = conts!!(i `mod` (length conts))
-                        tell [Sent (Choice name)]
-                        checkCoherence $ cont
-checkCoherence End              = return True
+checkCoherence End           = return True
 
 coherent :: ST c -> IO ()
 coherent st = coherent' st 100
@@ -382,6 +310,8 @@ coherent st = coherent' st 100
 
 shrinkCoherence :: ST c -> Log (c, String) -> IO ()
 shrinkCoherence = undefined
+
+-}
 
 -- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: (NFData a) => Gen a -> IO (Maybe a)
@@ -404,9 +334,7 @@ maxLen = maximum . (map (length . extract))
         extract (Sent (Choice s)) = s
 
 prettyTrace n (Got (Pure x))    = ["|" ++ middle n x ++ "  |", "|<"++ line '-' n  ++ "|", "|"++line ' ' n ++ " |"]
-prettyTrace n (Got (Choice s))  = ["|" ++ middle n s ++ "  |", "|<"++ line '.' n ++ "  |", "|"++line ' ' n ++ " |"]
 prettyTrace n (Sent (Pure x))   = ["|" ++ middle n x ++ "  |", "|"++ line '-' n  ++ ">|", "|"++line ' ' n ++ " |"]
-prettyTrace n (Sent (Choice s)) = ["|" ++ middle n s ++ "  |", "|"++ line '.' n ++ ">|", "|"++line ' ' n ++ " |"]
 
 middle n s = (line ' ' m) ++ s ++ (line ' ' k)
     where
@@ -419,16 +347,4 @@ middle n s = (line ' ' m) ++ s ++ (line ' ' k)
 line c n = concat $ replicate (n - 1) $ [c]
 
 printTrace (Got (Pure x))   = "Got ("++x++")"
-printTrace (Got (Choice s)) = "Branched "++s
 printTrace (Sent (Pure x))  = "Sent ("++x++")"
-printTrace (Sent (Choice s)) = "Chose "++s
-
--- Some syntax
-l <|> r = Choose (oneof [return 0, return 1]) [l, r]
-infixr 1 <|>
-
-l <&> r = Branch (oneof [return 0, return 1]) [l, r]
-infixr 1 <&>
-
-f .- c = f (const c)
-infixr 0 .-

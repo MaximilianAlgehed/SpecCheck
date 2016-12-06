@@ -1,25 +1,34 @@
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeOperators,
+             GADTs,
+             KindSignatures #-}
 module CSpec where
 import Control.Monad.Cont
-import ST
 import Predicate
 import Typeclasses
 import Test.QuickCheck
 import Control.DeepSeq
+import Control.Monad.Trans.Identity
 
-type CSpec t = Cont (ST t)
+-- It would be good to get a monad in here so we can
+-- do some side-effects, like reading the database to
+-- check if what the server is saying is actually true
+-- etc.
+data ST (m :: (* -> *) -> * -> *) c where
+    Send   :: (MonadTrans m, Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c
+    Get    :: (MonadTrans m, Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c 
+    End    :: ST m c
 
-toST :: CSpec t a -> ST t
-toST = flip runCont (const End)
+type CSpec t = CSpecT IdentityT t
+type CSpecT m t = ContT (ST m t) (m IO)
 
-send :: (a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpec t a
-send = cont . Send
+send :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
+send p = ContT $ fmap return (Send p)
 
-get :: (a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpec t a
-get = cont . Get
+get :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
+get p = ContT $ fmap return (Get p)
 
-stop :: CSpec t a
-stop = cont (const End)
+stop :: (MonadTrans m, Monad (m IO))  => CSpecT m t a
+stop = ContT $ fmap return (const End)
 
-choose :: (a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpec t a
+choose :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
 choose = send . from
