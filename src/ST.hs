@@ -44,8 +44,6 @@ data ST c where
     Branch :: Gen Int -> [(String, ST c)] -> ST c
     End    :: ST c
 
-type CSpec t = Cont (ST t)
-
 dual :: ST a -> ST a
 dual (Send pred cont) = Get pred (dual . cont)
 dual (Get pred cont)  = Send pred (dual . cont)

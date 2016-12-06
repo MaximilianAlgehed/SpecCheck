@@ -32,13 +32,12 @@ buyBook basket =
 bookProtocol :: CSpec ErlType ()
 bookProtocol = bookProtocol' emptyBasket
 
-bookProtocol' :: Basket -> CSpec ErlType ()
-bookProtocol' basket =
+loop :: Basket -> CSpec ErlType ()
+loop basket =
     do
         action <- choose ["finish", "buy", "basket"]
-        basket <- act basket action
+        basket <- case action of
+                    "finish" -> stop
+                    "buy"    -> buyBook basket
+                    "basket" -> get (permutationOf (fst basket) .*. is (snd basket))
         bookProtocol' basket
-
-act _      "finish" = stop
-act basket "buy"    = buyBook basket
-act basket "basket" = get (permutationOf (fst basket) .*. is (snd basket))

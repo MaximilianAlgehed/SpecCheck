@@ -7,6 +7,11 @@ import Typeclasses
 import Test.QuickCheck
 import Control.DeepSeq
 
+type CSpec t = Cont (ST t)
+
+toST :: CSpec t a -> ST t
+toST = flip runCont (const End)
+
 send :: (a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpec t a
 send = cont . Send
 
