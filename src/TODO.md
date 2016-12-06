@@ -1,9 +1,3 @@
 # TODO
 
-* Finish shrinking by incorporating it in the main function
-
-* How to get the automata to play nice and still have
-  the higher order syntax for results?
-
-* Monadic computation around the "get/send", maybe
-  do some IO during testing to verify correctness?
+* Implement `Send :: Predicate a -> (a -> m (ST m t)) -> ST m t` to get a monad transformer
