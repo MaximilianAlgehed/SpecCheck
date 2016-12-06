@@ -30,7 +30,7 @@ buyBook basket =
         return $ addToBasket book price basket
 
 bookProtocol :: CSpec ErlType ()
-bookProtocol = bookProtocol' emptyBasket
+bookProtocol = loop emptyBasket
 
 loop :: Basket -> CSpec ErlType ()
 loop basket =
@@ -40,4 +40,4 @@ loop basket =
                     "finish" -> stop
                     "buy"    -> buyBook basket
                     "basket" -> get (permutationOf (fst basket) .*. is (snd basket))
-        bookProtocol' basket
+        loop basket
