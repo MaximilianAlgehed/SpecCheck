@@ -3,7 +3,8 @@
              MultiParamTypeClasses,
              FlexibleInstances,
              FlexibleContexts,
-             UndecidableInstances #-}
+             UndecidableInstances,
+             OverlappingInstances #-}
 module Typeclasses where
 import Foreign.Erlang
 import Data.Char

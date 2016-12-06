@@ -60,3 +60,6 @@ inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x
 
 wildcard :: (Arbitrary a) => Predicate a
 wildcard = Predicate arbitrary (const Nothing) "_"
+
+from :: (Eq a, Show a) => [a] -> Predicate a
+from xs = predicate ("from " ++ show xs) (oneof (map return xs), \x -> x `elem` xs)

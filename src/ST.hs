@@ -9,6 +9,7 @@
 {-# LANGUAGE GADTs,
              TypeOperators,
              MultiParamTypeClasses,
+             TypeSynonymInstances,
              FlexibleInstances,
              FlexibleContexts,
              UndecidableInstances #-}
@@ -27,6 +28,7 @@ import Control.Concurrent
 import Control.Monad.Writer.Lazy
 import Control.Concurrent.Chan
 import Typeclasses
+import Control.Monad.Cont
 
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
@@ -41,6 +43,8 @@ data ST c where
     Choose :: Gen Int -> [(String, ST c)] -> ST c
     Branch :: Gen Int -> [(String, ST c)] -> ST c
     End    :: ST c
+
+type CSpec t = Cont (ST t)
 
 dual :: ST a -> ST a
 dual (Send pred cont) = Get pred (dual . cont)
