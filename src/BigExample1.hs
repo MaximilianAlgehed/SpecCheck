@@ -4,6 +4,7 @@ import Predicate
 import CSpec
 import qualified Control.Monad.Trans.State as S
 import Control.Monad.Trans
+import Control.Monad.Trans.Cont
 
 type ProductID = Int
 type Price     = Double
@@ -49,3 +50,6 @@ loop =
                          basket <- get (permutationOf (fst basket) .*. is (snd basket))
                          lift $ S.modify $ \st -> st {basket = basket}
         loop
+
+main = do
+        coherentT (dual bookProtocol) (\m -> S.evalStateT m initialShoppingState)

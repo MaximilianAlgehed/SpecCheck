@@ -38,11 +38,6 @@ import Control.Monad.Trans.Identity
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
 
-dual :: (MonadTrans m, Functor (m IO)) => ST m a -> ST m a
-dual (Send pred cont) = Get pred  $ \a -> fmap dual (cont a)
-dual (Get pred cont)  = Send pred $ \a -> fmap dual (cont a)
-dual End              = End
-
 sessionTest :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
             => ST m c
             -> ch c
