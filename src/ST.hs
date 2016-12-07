@@ -39,36 +39,36 @@ erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
 
 dual :: (MonadTrans m, Functor (m IO)) => ST m a -> ST m a
-dual (Send pred cont) = Get pred $ \a -> fmap dual (cont a)
+dual (Send pred cont) = Get pred  $ \a -> fmap dual (cont a)
 dual (Get pred cont)  = Send pred $ \a -> fmap dual (cont a)
 dual End              = End
 
 sessionTest :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
             => ST m c
-            -> ch (Protocol c)
+            -> ch c
             -> WriterT (Log (c, String)) (m IO) (Maybe String)
 sessionTest (Send p cont) ch =
     do
         value <- lift $ lift $ generate (generator p)
-        lift $ lift $ put ch $ Pure (embed value)
-        tell [Sent (Pure (embed value, show value))]
+        lift $ lift $ put ch $ embed value
+        tell [Sent (embed value, show value)]
         c <- lift $ cont value
         sessionTest c ch
 sessionTest (Get p cont) ch =
     do
-        Pure mv <- lift $ lift $ BCH.get ch
+        mv <- lift $ lift $ BCH.get ch
         case extract mv of
             Just value -> if predf p value == Nothing then
                             do
-                                tell [Got (Pure (mv, show value))]
+                                tell [Got (mv, show value)]
                                 c <- lift $ cont value
                                 sessionTest c ch
                           else
                             do
-                                tell [Got (Pure (mv, show value))]
+                                tell [Got (mv, show value)]
                                 return $ fmap (++" "++(show value)) (predf p value)
             Nothing    -> do 
-                            tell [Got (Pure (mv, show mv))]
+                            tell [Got (mv, show mv)]
                             return $ Just "Type error!"
 sessionTest End _ = return Nothing
 
@@ -82,35 +82,35 @@ sessionShrink :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
             => Int
             -> Log c
             -> ST m c
-            -> ch (Protocol c)
+            -> ch c 
             -> WriterT (Log (c, String)) (m IO) ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
                                                          -- of "Log String"
 sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the original trace
 sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
 sessionShrink n (x:xs) st ch
     | traceMatch x st   = case (x, st) of
-                            (Got (Pure _), Get p cont) ->
+                            (Got _, Get p cont) ->
                                 do
-                                    Pure mv <- lift $ lift $ BCH.get ch
+                                    mv <- lift $ lift $ BCH.get ch
                                     case extract mv of
                                         Just value -> if predf p value == Nothing then
                                                         do
-                                                            tell [Got (Pure (mv, (show value)))]
+                                                            tell [Got (mv, (show value))]
                                                             c <- lift $ cont value
                                                             sessionShrink (n-1) xs c ch
                                                       else
                                                         do
-                                                            tell [Got (Pure (mv, (show value)))]
+                                                            tell [Got (mv, (show value))]
                                                             return $ fromMaybeSS $ fmap (++" "++(show value)) (predf p value)
                                         Nothing    -> do 
-                                                        tell [Got (Pure (mv, (show mv)))]
+                                                        tell [Got (mv, (show mv))]
                                                         return $ FailingPredicate "Type error!"
-                            (Sent (Pure x), Send p cont) -> 
+                            (Sent x, Send p cont) -> 
                                 do
                                     let Just x' = extract x
                                     value <- lift $ lift $ shrinkValue (generator p) (predf p) x'
-                                    lift $ lift $ put ch $ Pure (embed value)
-                                    tell [Sent (Pure (embed value, (show value)))]
+                                    lift $ lift $ put ch $ (embed value)
+                                    tell [Sent (embed value, (show value))]
                                     c <- lift $ cont value
                                     sessionShrink (n-1) xs c ch
     | otherwise         = sessionShrink n xs st ch 
@@ -118,25 +118,25 @@ sessionShrink n (x:xs) st ch
 sessionShrink n [] (Send p cont) ch =
     do
         value <- lift $ lift $ generate (generator p)
-        lift $ lift $ put ch $ Pure (embed value)
-        tell [Sent (Pure (embed value, (show value)))]
+        lift $ lift $ put ch $ (embed value)
+        tell [Sent (embed value, (show value))]
         c <- lift $ cont value
         sessionShrink (n-1) [] c ch
 sessionShrink n [] (Get p cont) ch =
     do
-        Pure mv <- lift $ lift $ BCH.get ch
+        mv <- lift $ lift $ BCH.get ch
         case extract mv of
             Just value -> if predf p value == Nothing then
                             do
-                                tell [Got (Pure (mv, (show value)))]
+                                tell [Got (mv, (show value))]
                                 c <- lift $ cont value
                                 sessionShrink (n-1) [] c ch
                           else
                             do
-                                tell [Got (Pure (mv, (show value)))]
+                                tell [Got (mv, (show value))]
                                 return $ fromMaybeSS $ fmap (++" "++(show value)) (predf p value)
             Nothing    -> do 
-                            tell [Got (Pure (mv, (show mv)))]
+                            tell [Got (mv, (show mv))]
                             return $ FailingPredicate "Type error!"
 
 shrinkValue :: (Arbitrary a) => Gen a -> (a -> Maybe String) -> a -> IO a
@@ -145,16 +145,16 @@ shrinkValue gen pred a =
         [] -> generate gen
         xs -> generate $ oneof (map return xs)
 
-traceMatch :: Interaction (Protocol t) -> ST m t -> Bool
-traceMatch (Got (Pure x)) (Get _ _) = True
-traceMatch (Sent (Pure x)) (Send p _) =
+traceMatch :: Interaction t -> ST m t -> Bool
+traceMatch (Got x) (Get _ _) = True
+traceMatch (Sent x) (Send p _) =
     let x' = extract x in
     case x' of
         Just a  -> predf p a == Nothing -- Predicate holds / doesn't hold
         Nothing -> False -- Type error
 traceMatch _ _ = False
 
-runErlangT :: (t :<: ErlType, Show t, MonadTrans m, Monad (m IO))
+runErlangT :: (Erlang t, Show t, MonadTrans m, Monad (m IO))
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
@@ -166,7 +166,7 @@ runErlangT self mod fun spec interp =
         st <- interp $ runContT spec (fmap return $ const End)
         specCheck (runfun self) st interp
     where
-        runfun :: (t :<: ErlType) => Self -> P Chan (Protocol t) -> IO ()
+        runfun :: Erlang t => Self -> P Chan t -> IO ()
         runfun self ch =
             do
                 mbox <- createMBox self
@@ -198,7 +198,7 @@ runErlangT self mod fun spec interp =
                 mboxSend mbox (Short "erl") (Right "p") (mboxSelf mbox, m)
                 haskellLoop ch mbox
 
-runErlang :: (t :<: ErlType, Show t)
+runErlang :: (Erlang t, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
@@ -208,29 +208,33 @@ runErlang self mod fun spec = runErlangT self mod fun spec runIdentityT
 
 -- Run some tests
 specCheck :: (BiChannel ch c, Show c, MonadTrans m, Monad (m IO))
-          => (ch (Protocol c) -> IO ()) -- Function to test
+          => (ch c -> IO ()) -- Function to test
           -> ST m c                     -- The session type for the interaction
           -> (forall a. m IO a -> IO a) 
           -> IO ()
-specCheck impl t interp = loop 100
+specCheck impl t interp = loop m
     where
+        -- Number of tests to pass
+        m = 100
+        -- Number of shrinking passes
+        k = 200 
         loop 0 = putStrLn "\rO.K"
         loop n = do
                     hPutStr stderr $ "\r                  \r"
                     hPutStr stderr $ show n
                     ch <- new
                     forkIO $ impl (bidirect ch)
-                    (b, w) <- fmap interp runWriterT $ sessionTest t ch
+                    (b, w) <- interp $ runWriterT $ sessionTest t ch
                     kill ch
                     if b == Nothing then
                         loop (n-1)
                     else
                         do
                             hPutStr stderr $ "\r                  \r"
-                            putStrLn $ "Failed after "++(show (100 - n))++" tests"
+                            putStrLn $ "Failed after "++(show (m - n))++" tests"
                             shrinkLoop 0 (fromJust b) w
                             putStrLn $ "\n~~~~~\n"
-                            shrinkLoop 100 (fromJust b) w
+                            shrinkLoop k (fromJust b) w
 
         shrinkLoop 0 s trace =
                         do
@@ -238,7 +242,7 @@ specCheck impl t interp = loop 100
                             putStrLn $ "With: "++s
                             putStrLn "In:"
                             putStrLn "---"
-                            sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap (fmap snd)) trace)
+                            sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap snd) trace)
                             --sequence_ $ map (putStrLn . ("    "++)) $ concat $ map (prettyTrace (2*(maxLen w))) w
                             putStrLn "---"
                             return ()
@@ -247,71 +251,72 @@ specCheck impl t interp = loop 100
                             hPutStr stderr $ "\rShrinking ("++(show n)++")...               \r"
                             ch <- new
                             forkIO $ impl (bidirect ch)
-                            (b, w) <- fmap interp runWriterT $ sessionShrink (length trace) (map (fmap (fmap fst)) trace) t ch
+                            (b, w) <- fmap interp runWriterT $ sessionShrink (length trace) (map (fmap fst) trace) t ch
                             kill ch
                             case b of
                                 FailedToShrink -> shrinkLoop (n-1) s trace
                                 FailingPredicate s' -> shrinkLoop (n-1) s' w
 
-{-
-checkCoherence :: ST c -> WriterT (Log (c, String)) IO Bool
+checkCoherence :: (MonadTrans m, Monad (m IO)) => ST m c -> WriterT (Log (c, String)) (m IO) Bool
 checkCoherence (Send p cont) =
     do
-        mv <- lift $ tryGen (generator p)
+        mv <- lift $ lift $ tryGen (generator p)
         case mv of
-            Nothing    -> lift $ do
-                                    hPutStr stderr $ "\r                  \r"
-                                    putStrLn $ "Failed with inability to generate: " ++ name p
-                                    return False
+            Nothing    -> lift $ lift $ do
+                                         hPutStr stderr $ "\r                  \r"
+                                         putStrLn $ "Failed with inability to generate: " ++ name p
+                                         return False
             Just value -> case predf p value of
                             Nothing -> do
-                                        tell [Sent (Pure (embed value, show value))]
-                                        checkCoherence (cont value)
-                            Just s  -> lift $ do
-                                                hPutStr stderr $ "\r                  \r"
-                                                putStrLn "Failed with: "
-                                                putStrLn s
-                                                return False
+                                        tell [Sent (embed value, show value)]
+                                        c <- lift $ cont value
+                                        checkCoherence c
+                            Just s  -> lift $ lift $ do
+                                                       hPutStr stderr $ "\r                  \r"
+                                                       putStrLn "Failed with: "
+                                                       putStrLn s
+                                                       return False
 checkCoherence (Get p cont)  =
     do
-        mv <- lift $ tryGen (generator p)
+        mv <- lift $ lift $ tryGen (generator p)
         case mv of
-            Nothing    -> lift $ do
-                                    hPutStr stderr $ "\r                  \r"
-                                    putStrLn $ "Failed with inability to generate: " ++ name p
-                                    return False
+            Nothing    -> lift $ lift $ do
+                                           hPutStr stderr $ "\r                  \r"
+                                           putStrLn $ "Failed with inability to generate: " ++ name p
+                                           return False
             Just value -> case predf p value of
                             Nothing -> do
-                                        tell [Got (Pure (embed value, show value))]
-                                        checkCoherence (cont value)
-                            Just s  -> lift $ do
+                                        tell [Got (embed value, show value)]
+                                        c <- lift $ cont value
+                                        checkCoherence c
+                            Just s  -> lift $ lift $ do
                                                 hPutStr stderr $ "\r                  \r"
                                                 putStrLn "Failed with: "
                                                 putStrLn s
                                                 return False
 checkCoherence End           = return True
 
-coherent :: ST c -> IO ()
-coherent st = coherent' st 100
+coherentT :: (MonadTrans m, Monad (m IO)) => CSpecT m c a -> (forall a. m IO a -> IO a) -> IO ()
+coherentT spec interp = do
+                          st <- interp $ runContT spec (fmap return $ const End)
+                          coherent' st 100
     where
         coherent' _ 0 = putStrLn "\rPassed"
         coherent' st n = do
                             hPutStr stderr $ "\r                  \r"
                             hPutStr stderr $ show n
-                            (b, log) <- runWriterT $ checkCoherence st
+                            (b, log) <- interp $ runWriterT $ checkCoherence st
                             if b then
                                 coherent' st (n-1)
                             else
                                 do
                                     putStrLn "In:"
                                     putStrLn "---"
-                                    sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap (fmap snd)) log)
+                                    sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap snd) log)
                                     return ()
 
-shrinkCoherence :: ST c -> Log (c, String) -> IO ()
-shrinkCoherence = undefined
-
--}
+coherent :: CSpec c a -> IO ()
+coherent csp = coherentT csp runIdentityT
 
 -- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: (NFData a) => Gen a -> IO (Maybe a)
@@ -326,15 +331,14 @@ specialGenerate gen =
         v <- generate gen
         v `deepseq` return v
 
+maxLen :: [Interaction String] -> Int
 maxLen = maximum . (map (length . extract))
     where
-        extract (Got (Pure s)) = s
-        extract (Got (Choice s)) = s
-        extract (Sent (Pure s)) = s
-        extract (Sent (Choice s)) = s
+        extract (Got s) = s
+        extract (Sent s) = s
 
-prettyTrace n (Got (Pure x))    = ["|" ++ middle n x ++ "  |", "|<"++ line '-' n  ++ "|", "|"++line ' ' n ++ " |"]
-prettyTrace n (Sent (Pure x))   = ["|" ++ middle n x ++ "  |", "|"++ line '-' n  ++ ">|", "|"++line ' ' n ++ " |"]
+prettyTrace n (Got x)    = ["|" ++ middle n x ++ "  |", "|<"++ line '-' n  ++ "|", "|"++line ' ' n ++ " |"]
+prettyTrace n (Sent x)   = ["|" ++ middle n x ++ "  |", "|"++ line '-' n  ++ ">|", "|"++line ' ' n ++ " |"]
 
 middle n s = (line ' ' m) ++ s ++ (line ' ' k)
     where
@@ -346,5 +350,5 @@ middle n s = (line ' ' m) ++ s ++ (line ' ' k)
 
 line c n = concat $ replicate (n - 1) $ [c]
 
-printTrace (Got (Pure x))   = "Got ("++x++")"
-printTrace (Sent (Pure x))  = "Sent ("++x++")"
+printTrace (Got x)   = "Got: "++x
+printTrace (Sent x)  = "Sent: "++x

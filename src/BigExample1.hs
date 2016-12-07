@@ -2,42 +2,50 @@ import ST
 import Foreign.Erlang
 import Predicate
 import CSpec
+import qualified Control.Monad.Trans.State as S
+import Control.Monad.Trans
 
 type ProductID = Int
 type Price     = Double
 type Basket    = ([ProductID], Price)
+data ShoppingState = ShoppingState {basket :: Basket}
 
-addToBasket :: ProductID -> Price -> Basket -> Basket
-addToBasket id price (ids, priceT) = (id:ids, priceT + price)
+addToBasket :: (Monad m) => ProductID -> Price -> S.StateT ShoppingState m ()
+addToBasket id price =
+    S.modify $ \st -> let (ids, priceT) = basket st in st {basket = (id:ids, priceT + price)}
 
-emptyBasket :: Basket
-emptyBasket = ([], 0)
+initialShoppingState = ShoppingState {
+                        basket = ([], 0)
+                       }
 
 anyBook :: Predicate ProductID
 anyBook = posNum
 
-getPrice :: ProductID -> CSpec ErlType Double
+getPrice :: ProductID -> CSpecT (S.StateT ShoppingState) ErlType Double
 getPrice productID =
     do
         send (is productID)
         get posNum
 
-buyBook :: Basket -> CSpec ErlType Basket
-buyBook basket =
+buyBook :: CSpecT (S.StateT ShoppingState) ErlType ()
+buyBook =
     do
         book  <- send anyBook
         price <- getPrice book
-        return $ addToBasket book price basket
+        lift $ addToBasket book price
 
-bookProtocol :: CSpec ErlType ()
-bookProtocol = loop emptyBasket
+bookProtocol :: CSpecT (S.StateT ShoppingState) ErlType ()
+bookProtocol = loop
 
-loop :: Basket -> CSpec ErlType ()
-loop basket =
+loop :: CSpecT (S.StateT ShoppingState) ErlType ()
+loop =
     do
         action <- choose ["finish", "buy", "basket"]
-        basket <- case action of
-                    "finish" -> stop
-                    "buy"    -> buyBook basket
-                    "basket" -> get (permutationOf (fst basket) .*. is (snd basket))
-        loop basket
+        basket <- fmap basket $ lift $ S.get
+        case action of
+          "finish" -> stop
+          "buy"    -> buyBook
+          "basket" -> do
+                         basket <- get (permutationOf (fst basket) .*. is (snd basket))
+                         lift $ S.modify $ \st -> st {basket = basket}
+        loop

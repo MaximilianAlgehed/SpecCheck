@@ -9,10 +9,7 @@ import Test.QuickCheck
 import Control.DeepSeq
 import Control.Monad.Trans.Identity
 
--- It would be good to get a monad in here so we can
--- do some side-effects, like reading the database to
--- check if what the server is saying is actually true
--- etc.
+-- It would be good if we could hide the IO bit (or would it?)
 data ST (m :: (* -> *) -> * -> *) c where
     Send   :: (MonadTrans m, Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c
     Get    :: (MonadTrans m, Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c 

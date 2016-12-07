@@ -1,16 +1,16 @@
--module(erlangBookExample).
+-module(erlangBooks).
 -export([main/0]).
 
 main() -> spawn(fun() -> f() end).
 
 f() -> register(p, self()),
        receive 
-            Hs -> loop([])
+            _ -> loop([])
        end.
 
 loop(XS) ->
     receive 
-        {_, {pure, I}} -> continue(I, XS)
+        {_, I} -> continue(I, XS)
     end.
 
 continue(I, XS) ->
@@ -20,12 +20,12 @@ continue(I, XS) ->
             true  -> [I|XS]
           end,
     receive 
-        {_, {choice, another}} -> loop(Lst);
-        {Hs, {choice, request}} -> Hs ! {pure, Lst}, finish(Lst)
+        {_, "another"} -> loop(Lst);
+        {Hs, "request"} -> Hs ! Lst, finish(Lst)
     end.
 
 finish(XS) ->
     receive
-        {_, {choice, another}} -> loop(XS);
-        {_, {choice, done}} -> exit(done)
+        {_, "another"} -> loop(XS);
+        {_, "done"} -> exit(done)
     end.
