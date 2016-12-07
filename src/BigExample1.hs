@@ -44,11 +44,11 @@ loop =
         action <- choose ["finish", "buy", "basket"]
         basket <- fmap basket $ lift $ S.get
         case action of
-          "finish" -> stop
-          "buy"    -> buyBook
-          "basket" -> do
-                         basket <- get (permutationOf (fst basket) .*. is (snd basket))
-                         lift $ S.modify $ \st -> st {basket = basket}
+            "finish" -> stop
+            "buy"    -> buyBook
+            "basket" -> do
+                           basket <- get (permutationOf (fst basket) .*. is (snd basket))
+                           lift $ S.modify $ \st -> st {basket = basket}
         loop
 
 main = do
