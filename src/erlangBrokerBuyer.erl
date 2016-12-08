@@ -10,16 +10,17 @@ f() -> register(p, self()),
 
 loop(P) ->
     receive 
-        {Hs, {pure, RequestedPrice}} -> if
-                                            RequestedPrice < P  -> Hs ! {choice, response},
+        {Hs, RequestedPrice} -> if
+                                            RequestedPrice < P  -> Hs ! "response",
                                                                    NewPrice = RequestedPrice + ((P - RequestedPrice) / 2),
                                                                    % Basic recalculation of the price
-                                                                   Hs ! {pure, NewPrice},
-                                                                   Hs ! {choice, request},
-                                                                   loop(NewPrice);
-                                            RequestedPrice >= P -> Hs ! {choice, response},
-                                                                   Hs ! {pure, RequestedPrice},
-                                                                   Hs ! {choice, accept},
+                                                                   Hs ! NewPrice,
+                                                                   Hs ! "request",
+                                                                   loop(NewPrice);      %Replacte with P for bug
+
+                                            RequestedPrice >= P -> Hs ! "response",     %Comment these lines out for bug
+                                                                   Hs ! RequestedPrice, %.............
+                                                                   Hs ! "accept",
                                                                    exit(done)
                                         end
     end.

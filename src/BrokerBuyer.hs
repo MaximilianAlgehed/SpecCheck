@@ -1,4 +1,6 @@
 import ST
+import CSpec
+import Predicate
 import Foreign.Erlang
 
 -- There are two bugs in the erlang implementation,
@@ -9,12 +11,29 @@ import Foreign.Erlang
 -- accepts a price rather than sending the "response"
 -- message to the client
 
-buyer :: ST ErlType
-buyer = buyer' 100 -- Set 100 as the maximum price, for example purposes
+buyer :: CSpecS Double ErlType ()
+buyer =
+    do
+        price  <- state
+        reqP   <- send $ inRange (0, price+0.1)
+        br     <- branch ["response", "fault"]
+        case br of
+            "response" -> do
+                            brokerPrice <- get $ inRange (reqP-0.1, price+0.1) 
+                            continue brokerPrice
+            "fault"    -> stop
 
-buyer' :: Double -> ST ErlType
-buyer' price = Send (inRange (0, price)) $ \ reqP -> 
-               ("response", Get (inRange (reqP, price)) continue) <&> ("fault", End)
+continue :: Double -> CSpecS Double ErlType ()
+continue brokerPrice =
+    do
+        br <- branch ["accept", "request"]
+        case br of
+            "accept"  -> stop
+            "request" -> do
+                            store brokerPrice
+                            buyer
 
-continue :: Double -> ST ErlType
-continue brokerPrice = ("accept", End) <&> ("request", buyer' brokerPrice)
+main = do
+    coherentS buyer 100
+    self <- createSelf "haskell@localhost"
+    runErlangS self "erlangBrokerBuyer" "main" buyer 100

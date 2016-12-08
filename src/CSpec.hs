@@ -17,9 +17,9 @@ data ST m c where
     Get    :: (Monad (m IO), Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c 
     End    :: ST m c
 
-type CSpec t     = forall a. CSpecS a t
-type CSpecS st t = CSpecT (S.StateT st) t
-type CSpecT m t  = ContT (ST m t) (m IO)
+type CSpec t r     = forall a. CSpecS a t r
+type CSpecS st t r = CSpecT (S.StateT st) t r
+type CSpecT m t r  = ContT (ST m t) (m IO) r
 
 send :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
 send p = ContT $ fmap return (Send p)

@@ -198,7 +198,7 @@ runErlang :: (Erlang t, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
-          -> CSpecS () t a -- The session type for the interaction
+          -> CSpec t a -- The session type for the interaction
           -> IO ()
 runErlang self mod fun spec = runErlangS self mod fun spec ()
 
@@ -323,7 +323,7 @@ coherentS :: CSpecS st c a -> st -> IO ()
 coherentS spec state = coherentT spec (flip S.evalStateT state)
 
 coherent :: CSpec c a -> IO ()
-coherent csp = coherentS csp _
+coherent csp = coherentS csp ()
 
 -- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: (NFData a) => Gen a -> IO (Maybe a)
