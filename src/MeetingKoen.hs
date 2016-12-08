@@ -9,37 +9,6 @@ import Foreign.Erlang
 import Control.DeepSeq
 import Test.QuickCheck
 
-{- An example of "buying books from amazon" -}
-bookShop :: ST ErlType
-bookShop = bookShop' ([] :: [Int])
-
-bookShop' :: [Int] -> ST ErlType
-bookShop' bs =
-    Send book $ \b ->
-    let bs' = b:bs in
-    ("another", bookShop' bs') <|> ("request", Get (permutationOf bs') cont)
- 
-cont :: [Int] -> ST ErlType
-cont bs = ("another", bookShop' bs) <|> ("done", End)
-
-book :: Predicate Int
-book = wildcard -- posNum
-
-{- Two parties deciding on a price -}
-buyer :: ST ErlType
-buyer = buyer' 100 -- Set 100 as the maximum price, for example purposes
-
-buyer' :: Double -> ST ErlType
-buyer' price = Send (inRange (0, price)) $ \ reqP -> 
-               ("response", Get (inRange (reqP, price)) continue) <&> ("fault", End)
-
--- "Case study":
--- 1. fix the first bug by making the server correct
--- 2. Try to fix the non-termination by altering the "price" parameter
--- 3. Fix the fact that the server may "accept" a price that is too high
-
-continue :: Double -> ST ErlType
-continue brokerPrice = ("accept", End) <&> ("request", buyer' brokerPrice)
 
 buyer'' :: Double -> ST ErlType
 buyer'' price = Send (inRange (0, price+0.5)) $ \reqP ->
