@@ -4,31 +4,32 @@ import CSpec
 import Predicate
 
 {- An example of buying books from amazon with monads -}
-bookShop :: CSpec ErlType ()
-bookShop = loop []
+bookShop :: CSpecS [Int] ErlType ()
+bookShop = loop
 
-loop :: [Int] -> CSpec ErlType ()
-loop books =
+loop :: CSpecS [Int] ErlType ()
+loop =
     do
         b <- send wildcard
-        let bs = b:books
+        modify $ \books -> b:books
 
         choice <- choose ["another", "request"]
         case choice of
-            "another" -> loop bs
-            "request" -> request bs
+            "another" -> loop
+            "request" -> request
             
-request :: [Int] -> CSpec ErlType ()
-request bs =
+request :: CSpecS [Int] ErlType ()
+request =
     do
-        get $ permutationOf bs
+        books <- state
+        get $ permutationOf books
 
         choice <- choose ["another", "done"]
         case choice of
-            "another" -> loop bs
+            "another" -> loop
             "done"    -> stop
 
 main :: IO ()
 main = do
         self <- createSelf "haskell@localhost"
-        runErlang self "erlangBooks" "main" bookShop
+        runErlangS self "erlangBooks" "main" bookShop []

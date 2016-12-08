@@ -11,10 +11,6 @@ type Price     = Double
 type Basket    = ([ProductID], Price)
 data ShoppingState = ShoppingState {basket :: Basket}
 
-addToBasket :: (Monad m) => ProductID -> Price -> S.StateT ShoppingState m ()
-addToBasket id price =
-    S.modify $ \st -> let (ids, priceT) = basket st in st {basket = (id:ids, priceT + price)}
-
 initialShoppingState = ShoppingState {
                         basket = ([], 0)
                        }
@@ -22,33 +18,32 @@ initialShoppingState = ShoppingState {
 anyBook :: Predicate ProductID
 anyBook = posNum
 
-getPrice :: ProductID -> CSpecT (S.StateT ShoppingState) ErlType Double
+getPrice :: ProductID -> CSpecS ShoppingState ErlType Double
 getPrice productID =
     do
         send (is productID)
         get posNum
 
-buyBook :: CSpecT (S.StateT ShoppingState) ErlType ()
+buyBook :: CSpecS ShoppingState ErlType ()
 buyBook =
     do
         book  <- send anyBook
         price <- getPrice book
-        lift $ addToBasket book price
+        modify $ \st -> let (books, priceT) = basket st in st {basket = (book:books, priceT + price)}
 
-bookProtocol :: CSpecT (S.StateT ShoppingState) ErlType ()
+bookProtocol :: CSpecS ShoppingState ErlType ()
 bookProtocol = loop
 
-loop :: CSpecT (S.StateT ShoppingState) ErlType ()
+loop :: CSpecS ShoppingState ErlType ()
 loop =
     do
         action <- choose ["finish", "buy", "basket"]
-        basket <- fmap basket $ lift $ S.get
+        basket <- basket <$> state
         case action of
             "finish" -> stop
             "buy"    -> buyBook
             "basket" -> do
-                           basket <- get (permutationOf (fst basket) .*. is (snd basket))
-                           lift $ S.modify $ \st -> st {basket = basket}
+                           basket <- get $ permutationOf (fst basket) .*. is (snd basket)
         loop
 
 main = do

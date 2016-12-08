@@ -34,6 +34,7 @@ import Control.Concurrent.Chan
 import Typeclasses
 import Control.Monad.Cont
 import Control.Monad.Trans.Identity
+import qualified Control.Monad.Trans.State as S
 
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
@@ -197,9 +198,18 @@ runErlang :: (Erlang t, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
-          -> CSpec t a -- The session type for the interaction
+          -> CSpecS () t a -- The session type for the interaction
           -> IO ()
-runErlang self mod fun spec = runErlangT self mod fun spec runIdentityT
+runErlang self mod fun spec = runErlangS self mod fun spec ()
+
+runErlangS :: (Erlang t, Show t)
+           => Self -- Created by "createSelf \"name@localhost\""
+          -> String -- module name
+          -> String -- function name
+          -> CSpecS st t a -- The session type for the interaction
+          -> st
+          -> IO ()
+runErlangS self mod fun spec state = runErlangT self mod fun spec (flip S.evalStateT state)
 
 -- Run some tests
 specCheck :: (BiChannel ch c, Show c, MonadTrans m, Monad (m IO))
@@ -238,7 +248,6 @@ specCheck impl t interp = loop m
                             putStrLn "In:"
                             putStrLn "---"
                             sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap snd) trace)
-                            --sequence_ $ map (putStrLn . ("    "++)) $ concat $ map (prettyTrace (2*(maxLen w))) w
                             putStrLn "---"
                             return ()
         shrinkLoop n s trace =
@@ -310,8 +319,11 @@ coherentT spec interp = do
                                     sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap snd) log)
                                     return ()
 
+coherentS :: CSpecS st c a -> st -> IO () 
+coherentS spec state = coherentT spec (flip S.evalStateT state)
+
 coherent :: CSpec c a -> IO ()
-coherent csp = coherentT csp runIdentityT
+coherent csp = coherentS csp _
 
 -- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: (NFData a) => Gen a -> IO (Maybe a)
@@ -326,24 +338,5 @@ specialGenerate gen =
         v <- generate gen
         v `deepseq` return v
 
-maxLen :: [Interaction String] -> Int
-maxLen = maximum . (map (length . extract))
-    where
-        extract (Got s) = s
-        extract (Sent s) = s
-
-prettyTrace n (Got x)    = ["|" ++ middle n x ++ "  |", "|<"++ line '-' n  ++ "|", "|"++line ' ' n ++ " |"]
-prettyTrace n (Sent x)   = ["|" ++ middle n x ++ "  |", "|"++ line '-' n  ++ ">|", "|"++line ' ' n ++ " |"]
-
-middle n s = (line ' ' m) ++ s ++ (line ' ' k)
-    where
-        m = if even (n - length s) then
-                (n - length s) `div` 2
-            else
-                (n - length s) `div` 2 + 1
-        k = (n - length s) `div` 2
-
-line c n = concat $ replicate (n - 1) $ [c]
-
-printTrace (Got x)   = "Got: "++x
+printTrace (Got x)   = "Got:  "++x
 printTrace (Sent x)  = "Sent: "++x
