@@ -10,7 +10,7 @@ bookShop = loop []
 loop :: [Int] -> CSpec ErlType ()
 loop books =
     do
-        b <- send posNum
+        b <- send wildcard
         let bs = b:books
 
         choice <- choose ["another", "request"]
