@@ -34,6 +34,7 @@ continue brokerPrice =
                             buyer
 
 main = do
+    putStrLn "Testing coherence..."
     coherentS buyer 100
     self <- createSelf "haskell@localhost"
     runErlangS self "erlangBrokerBuyer" "main" buyer 100

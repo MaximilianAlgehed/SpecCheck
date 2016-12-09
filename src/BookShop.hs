@@ -31,5 +31,7 @@ request =
 
 main :: IO ()
 main = do
+        putStrLn "Testing coherence..."
+        coherentS bookShop []
         self <- createSelf "haskell@localhost"
         runErlangS self "erlangBooks" "main" bookShop []
