@@ -10,11 +10,12 @@ import Control.Monad.Trans.Cont
 
 type ProductID = Int
 type Price     = Double
-type Basket    = ([ProductID], Price)
-data ShoppingState = ShoppingState {basket :: Basket}
+data ShoppingState = ShoppingState {basket :: [ProductID],
+                                    price :: Price}
 
 initialShoppingState = ShoppingState {
-                        basket = ([], 0)
+                        basket = [],
+                        price  = 0
                        }
 
 anyBook :: Predicate ProductID
@@ -37,11 +38,11 @@ bookProtocol :: CSpecS ShoppingState ErlType ()
 bookProtocol =
     do
         action <- choose ["finish", "buy", "basket"]
-        basket <- basket <$> state
+        s      <- state
         case action of
             "finish" -> stop
             "buy"    -> buyBook
-            "basket" -> void $ get $ permutationOf (fst basket) .*. is (snd basket)
+            "basket" -> void $ get $ permutationOf (basket s) .*. is (price s)
         bookProtocol
 
 main = do
