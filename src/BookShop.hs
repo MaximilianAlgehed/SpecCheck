@@ -1,3 +1,5 @@
+import Control.Concurrent
+import System.Process 
 import ST
 import Foreign.Erlang
 import CSpec
@@ -33,5 +35,10 @@ main :: IO ()
 main = do
         putStrLn "Testing coherence..."
         coherentS bookShop []
-        self <- createSelf "haskell@localhost"
+        ph <- spawnCommand "erl -sname erl > /dev/null"
+        threadDelay 2000000
+        putStrLn "\nTesting protocol compliance..."
+        (self, tid) <- createSelf "haskell@localhost"
         runErlangS self "erlangBooks" "main" bookShop []
+        killThread tid
+        callCommand "./kill-erlang-node.sh erl"
