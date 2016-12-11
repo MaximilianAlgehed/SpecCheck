@@ -14,7 +14,8 @@
              FlexibleContexts,
              KindSignatures,
              RankNTypes,
-             UndecidableInstances #-}
+             UndecidableInstances,
+             ScopedTypeVariables #-}
 module ST where
 import CSpec
 import Control.Monad.Trans
@@ -35,6 +36,7 @@ import Typeclasses
 import Control.Monad.Cont
 import Control.Monad.Trans.Identity
 import qualified Control.Monad.Trans.State as S
+import Control.Exception
 
 erlBool True = ErlAtom "true"
 erlBool False = ErlAtom "false"
@@ -327,7 +329,7 @@ coherent csp = coherentS csp ()
 
 -- Try to generate a value, if it is not done in 1 second, give up
 tryGen :: (NFData a) => Gen a -> IO (Maybe a)
-tryGen gen = timeout 1000000 (specialGenerate gen)
+tryGen gen = catch (timeout 1000000 (specialGenerate gen)) (\(x :: SomeException) -> (return Nothing))
 
 -- We need to do this because `generate gen` generates a thunk
 -- which starts getting evaluated, this messes up `timeout`,
