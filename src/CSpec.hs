@@ -17,7 +17,7 @@ data ST m c where
     Get    :: (Monad (m IO), Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c 
     End    :: ST m c
 
-type CSpec t r     = forall m. CSpecT m t r
+type CSpec t r     = forall m. (Monad (m IO), MonadTrans m) => CSpecT m t r
 type CSpecS st t r = CSpecT (S.StateT st) t r
 type CSpecT m t r  = ContT (ST m t) (m IO) r
 

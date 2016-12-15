@@ -78,6 +78,23 @@ instance (a :<: ErlType, b :<: ErlType) => (a, b) :<: ErlType where
                                     r <- extract y
                                     return (l, r)
 
+instance (a :<: ErlType, b :<: ErlType, c :<: ErlType) => (a, b, c) :<: ErlType where
+    embed   (x, y, z)         = ErlTuple [embed x, embed y, embed z]
+    extract (ErlTuple [x, y, z]) = do
+                                    l <- extract x
+                                    r <- extract y
+                                    f <- extract z
+                                    return (l, r, f)
+
+instance (a :<: ErlType) => Maybe a :<: ErlType where
+  embed Nothing  = ErlAtom "nothing"
+  embed (Just x) = ErlTuple [ErlAtom "just", embed x]
+
+  extract (ErlAtom "nothing") = Nothing
+  extract (ErlTuple [ErlAtom "just", x]) =
+    do
+      x <- extract x
+      return (Just x)
 instance (t :<: ErlType) => Erlang t where
     toErlang = embed
     fromErlang = fromJust . extract -- unsafe
