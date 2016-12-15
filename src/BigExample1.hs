@@ -65,7 +65,7 @@ relevantResults s = predicate ("relevantResults "++s)
 getBasket :: CSpecS ShoppingState ErlType ()
 getBasket =
     do
-        s      <- state
+        s   <- state
         void $ get $ permutationOf (basket s) .*. is (price s)
 
 bookProtocol :: CSpecS ShoppingState ErlType ()
