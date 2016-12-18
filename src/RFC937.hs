@@ -20,8 +20,8 @@ nnnm  = Match "#" >*> integer
 cccm  = Match "=" >*> integer
 quitm = Match "QUIT"
 foldm = Match "FOLD " >*> word
-readm = Match "READ " >*> integer
-retrm = Match "RETR " >*> integer
+readm = Match "READ" >*> possibly (Match " " >*> integer)
+retrm = Match "RETR"
 greeting = Match "POP2 " >*> Anything
 
 heloP = regexP "HELO_message" $ helom 
@@ -36,8 +36,10 @@ greetingP = regexP "greeting" $ greeting
 transition :: Monad m => String -> [(Regexish, m ())] -> m ()
 transition s []       = return ()
 transition s (x:xs) 
-  | matches (fst x) s = snd x >> return ()
+  | matches (fst x) s = snd x
   | otherwise         = transition s xs 
+
+-- Simplified POP2 protocol
 
 call :: CSpec String ()
 call = do

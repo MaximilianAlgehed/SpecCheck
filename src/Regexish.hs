@@ -83,3 +83,6 @@ atLeastOne :: Regexish -> Regexish
 atLeastOne rgx = rgx >*> AnyNumberOf rgx
 
 x <|> y = Choice [x, y]
+
+possibly :: Regexish -> Regexish
+possibly rgx = Choice [Match "", rgx]
