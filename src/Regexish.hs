@@ -3,6 +3,7 @@ import Text.Regex.Posix
 import Test.QuickCheck
 import Control.Monad
 import Data.List
+import Predicate
 
 data Regexish = Match String
               | AnyNumberOf Regexish
@@ -10,8 +11,11 @@ data Regexish = Match String
               | Choice [Regexish]
               | Sequence Regexish Regexish
 
+alnum :: String
+alnum = "abcdefghijklmnopqrstuvxyzABCDEFGHIJKLMNOPQRSTUVXYZ0123456789"
+
 genStr :: Gen String
-genStr = listOf $ oneof $ fmap return "abcdefghijklmnopqrstuvxyzABCDEFGHIJKLMNOPQRSTUVXYZ0123456789.:;-"
+genStr = listOf $ oneof $ fmap return (alnum ++ " ")
 
 instance Arbitrary Regexish where
   arbitrary = sized gen
@@ -22,19 +26,19 @@ instance Arbitrary Regexish where
             return (Match s),
           return Anything
           ]
-      gen n = oneof [
-        gen 0,
-        do
-          s <- gen (n-1)
-          return $ AnyNumberOf s,
-        do
+      gen n = frequency [
+        (10, gen 0),
+        (1, do
+          s <- gen $ (round . sqrt . fromInteger . toInteger) n
+          return $ AnyNumberOf s),
+        (10, do
           i <- fmap (abs . (flip mod n) . abs) arbitrary
           xs <- replicateM (i + 1) $ gen (n `div` (i + 1))
-          return $ Choice xs,
-        do
+          return $ Choice xs),
+        (10, do
           l <- gen (n `div` 2)
           r <- gen (n `div` 2)
-          return $ Sequence l r]
+          return $ Sequence l r)]
 
 instance Show Regexish where
   show = toString
@@ -65,12 +69,17 @@ genRegex (Sequence a b)    = do
   bs <- genRegex b
   return $ as ++ bs
 
+regexP :: String -> Regexish -> Predicate String
+regexP s rgx = predicate s (genRegex rgx, matches rgx)
+
 -- Some syntax
 integer :: Regexish
 integer = (Choice [Match (show x) | x <- [1..9]]) >*> AnyNumberOf (Choice [Match (show x) | x <- [0..9]])
 
-perhaps :: Regexish -> Regexish
-perhaps rgx = Choice [Match "", rgx]
+word :: Regexish
+word = atLeastOne $ Choice [Match [x] | x <- alnum]
 
-floating :: Regexish
-floating = integer >*> perhaps (Match "." >*> integer)
+atLeastOne :: Regexish -> Regexish
+atLeastOne rgx = rgx >*> AnyNumberOf rgx
+
+x <|> y = Choice [x, y]
