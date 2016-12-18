@@ -12,3 +12,5 @@
 * Something interesting where we can test duality
 
 * Another `BigExample` which is more stateful
+
+* -XOverloadedStrings for Regexish
