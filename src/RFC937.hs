@@ -18,21 +18,26 @@ heloMessage = regexP "HELO_message" $ Match "HELO " >*> word >*> Match " " >*> w
 
 loginStatus = regexP "Integer"      $ Match "#" >*> integer
 
-login :: CSpec ErlType Integer 
-login =
-  do
-    send heloMessage
-    s <- get loginStatus
-    return $ read (tail s)
+quit = regexP "quit" $ Match "QUIT"
 
-call :: CSpec ErlType ()
-call =
+fold = regexP "fold" $ Match "FOLD " >*> word
+
+read = regexP "read" $ Match "READ " >*> integer
+
+rfc :: CSpec ErlType ()
+rfc =
   do
     get greeting
-    next <- send $ Match "QUIT" <|> (Match "FOLD " >*> word)
+
+    next <- send $ quit ||| heloMessage
     if matches (Match "QUIT") then
       stop
     else
-      folder 
+      return ()
+    get loginStatus
 
-folder :: CSpec ErlType ()
+    next <- send $ quit ||| fold ||| read
+    if matches (Match "QUIT") then
+      stop
+    else
+      return ()
