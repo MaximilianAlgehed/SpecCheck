@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 import Typeclasses
 import Test.QuickCheck hiding (choose)
 import ST
@@ -14,30 +15,65 @@ import Data.Generics
 import Regexish
 
 {- The simple interpretation -}
-heloMessage = regexP "HELO_message" $ Match "HELO " >*> word >*> Match " " >*> word 
+helom = Match "HELO " >*> word >*> Match " " >*> word 
+nnnm  = Match "#" >*> integer
+cccm  = Match "=" >*> integer
+quitm = Match "QUIT"
+foldm = Match "FOLD " >*> word
+readm = Match "READ " >*> integer
+retrm = Match "RETR " >*> integer
+greeting = Match "POP2 " >*> Anything
 
-loginStatus = regexP "Integer"      $ Match "#" >*> integer
+heloP = regexP "HELO_message" $ helom 
+nnnmP = regexP "Integer"      $ nnnm
+cccmP = regexP "Integer"      $ cccm
+quitP = regexP "quit"         $ quitm
+foldP = regexP "fold"         $ foldm
+readP = regexP "read"         $ readm
+retrP = regexP "retr"         $ retrm 
+greetingP = regexP "greeting" $ greeting
 
-quit = regexP "quit" $ Match "QUIT"
+transition :: Monad m => String -> [(Regexish, m ())] -> m ()
+transition s []       = return ()
+transition s (x:xs) 
+  | matches (fst x) s = snd x >> return ()
+  | otherwise         = transition s xs 
 
-fold = regexP "fold" $ Match "FOLD " >*> word
+call :: CSpec String ()
+call = do
+  get greetingP
 
-read = regexP "read" $ Match "READ " >*> integer
+  next <- send $ quitP ||| heloP
+  transition next [
+    (quitm,  stop),
+    (helom,  nmbr)]
 
-rfc :: CSpec ErlType ()
-rfc =
-  do
-    get greeting
+nmbr :: CSpec String ()
+nmbr = do
+  numMsgs <- get nnnmP
 
-    next <- send $ quit ||| heloMessage
-    if matches (Match "QUIT") then
-      stop
-    else
-      return ()
-    get loginStatus
+  next    <- send $ quitP ||| foldP ||| readP
+  transition next [
+    (quitm, stop),
+    (readm, size),
+    (foldm, nmbr)]
 
-    next <- send $ quit ||| fold ||| read
-    if matches (Match "QUIT") then
-      stop
-    else
-      return ()
+size :: CSpec String ()
+size = do
+  rep  <- get cccmP
+  let sz = read (tail rep)
+
+  next <- send $ quitP ||| foldP ||| readP ||| retrP
+  transition next [
+    (quitm, stop),
+    (foldm, nmbr),
+    (retrm, xfer sz),
+    (readm, size)]
+
+xfer :: Int -> CSpec String ()
+xfer sz = do
+  get $ predicate ("hasSize "++(show sz)) (replicateM sz arbitrary, \xs -> length (xs :: String) == sz)
+  size
+
+rfc :: CSpec String ()
+rfc = call
