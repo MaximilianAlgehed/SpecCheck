@@ -23,15 +23,19 @@ foldm    = Match "FOLD " >*> word
 readm    = Match "READ" >*> possibly (Match " " >*> integer)
 retrm    = Match "RETR"
 greeting = Match "POP2 " >*> Anything
+ackdm    = Match "ACKD"
+acksm    = Match "ACKS"
 
-heloP     = regexP "HELO_message" $ helom 
-nnnmP     = regexP "Integer"      $ nnnm
-cccmP     = regexP "Integer"      $ cccm
-quitP     = regexP "quit"         $ quitm
-foldP     = regexP "fold"         $ foldm
-readP     = regexP "read"         $ readm
-retrP     = regexP "retr"         $ retrm 
-greetingP = regexP "greeting" $ greeting
+heloP     = regexP "HELO_message" helom 
+nnnmP     = regexP "Integer"      nnnm
+cccmP     = regexP "Integer"      cccm
+quitP     = regexP "quit"         quitm
+foldP     = regexP "fold"         foldm
+readP     = regexP "read"         readm
+retrP     = regexP "retr"         retrm 
+greetingP = regexP "greeting"     greeting
+ackdP     = regexP "ackd"         ackdm
+acksP     = regexP "acks"         acksm 
 
 transition :: Monad m => String -> [(Regexish, m ())] -> m ()
 transition s []       = return ()
@@ -65,11 +69,14 @@ parseRead = read . drop 5
 
 size :: String -> CSpecS Int String ()
 size trans = do
-  rep   <- get cccmP
-  let sz = read (tail rep)
   case trans of
     "READ" -> return ()
+    "ACKD" -> modify (+1)
+    "ACKS" -> modify (+1)
     xs     -> store (parseRead xs) 
+
+  rep   <- get cccmP
+  let sz = read (tail rep)
 
   next <- send $ quitP ||| foldP ||| readP ||| retrP
   transition next [
@@ -81,7 +88,8 @@ size trans = do
 xfer :: Int -> CSpecS Int String ()
 xfer sz = do
   get $ predicate ("hasSize "++(show sz)) (replicateM sz arbitrary, \xs -> length (xs :: String) == sz)
-  size "READ" -- Hack for now, will implement ACK messages later
+  ack <- send $ ackdP ||| acksP
+  size ack
 
 rfc :: CSpecS Int String ()
 rfc = call
