@@ -16,11 +16,11 @@ import Regexish
 
 {- The simple interpretation -}
 helom    = Match "HELO " >*> word >*> Match " " >*> word 
-nnnm     = Match "#" >*> integer
-cccm     = Match "=" >*> integer
+nnnm     = Match "#"     >*> integer
+cccm     = Match "="     >*> integer
 quitm    = Match "QUIT"
 foldm    = Match "FOLD " >*> word
-readm    = Match "READ" >*> possibly (Match " " >*> integer)
+readm    = Match "READ"  >*> possibly (Match " " >*> integer)
 retrm    = Match "RETR"
 greeting = Match "POP2 " >*> Anything
 ackdm    = Match "ACKD"
