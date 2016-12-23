@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeOperators,
              GADTs,
-             RankNTypes #-}
+             Rank2Types #-}
 module CSpec where
 import Control.Monad.Trans
 import Control.Monad.Trans.Cont

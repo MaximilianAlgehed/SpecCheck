@@ -15,22 +15,22 @@ import Data.Generics
 import Regexish
 
 {- The simple interpretation -}
-helom = Match "HELO " >*> word >*> Match " " >*> word 
-nnnm  = Match "#" >*> integer
-cccm  = Match "=" >*> integer
-quitm = Match "QUIT"
-foldm = Match "FOLD " >*> word
-readm = Match "READ" >*> possibly (Match " " >*> integer)
-retrm = Match "RETR"
+helom    = Match "HELO " >*> word >*> Match " " >*> word 
+nnnm     = Match "#" >*> integer
+cccm     = Match "=" >*> integer
+quitm    = Match "QUIT"
+foldm    = Match "FOLD " >*> word
+readm    = Match "READ" >*> possibly (Match " " >*> integer)
+retrm    = Match "RETR"
 greeting = Match "POP2 " >*> Anything
 
-heloP = regexP "HELO_message" $ helom 
-nnnmP = regexP "Integer"      $ nnnm
-cccmP = regexP "Integer"      $ cccm
-quitP = regexP "quit"         $ quitm
-foldP = regexP "fold"         $ foldm
-readP = regexP "read"         $ readm
-retrP = regexP "retr"         $ retrm 
+heloP     = regexP "HELO_message" $ helom 
+nnnmP     = regexP "Integer"      $ nnnm
+cccmP     = regexP "Integer"      $ cccm
+quitP     = regexP "quit"         $ quitm
+foldP     = regexP "fold"         $ foldm
+readP     = regexP "read"         $ readm
+retrP     = regexP "retr"         $ retrm 
 greetingP = regexP "greeting" $ greeting
 
 transition :: Monad m => String -> [(Regexish, m ())] -> m ()
@@ -41,7 +41,7 @@ transition s (x:xs)
 
 -- Simplified POP2 protocol
 
-call :: CSpec String ()
+call :: CSpecS Int String ()
 call = do
   get greetingP
 
@@ -50,32 +50,38 @@ call = do
     (quitm,  stop),
     (helom,  nmbr)]
 
-nmbr :: CSpec String ()
+nmbr :: CSpecS Int String ()
 nmbr = do
   numMsgs <- get nnnmP
 
   next    <- send $ quitP ||| foldP ||| readP
   transition next [
     (quitm, stop),
-    (readm, size),
+    (readm, size next),
     (foldm, nmbr)]
 
-size :: CSpec String ()
-size = do
-  rep  <- get cccmP
+parseRead :: String -> Int
+parseRead = read . drop 5
+
+size :: String -> CSpecS Int String ()
+size trans = do
+  rep   <- get cccmP
   let sz = read (tail rep)
+  case trans of
+    "READ" -> return ()
+    xs     -> store (parseRead xs) 
 
   next <- send $ quitP ||| foldP ||| readP ||| retrP
   transition next [
     (quitm, stop),
     (foldm, nmbr),
-    (retrm, xfer sz),
-    (readm, size)]
+    (readm, size next),
+    (retrm, xfer sz)]
 
-xfer :: Int -> CSpec String ()
+xfer :: Int -> CSpecS Int String ()
 xfer sz = do
   get $ predicate ("hasSize "++(show sz)) (replicateM sz arbitrary, \xs -> length (xs :: String) == sz)
-  size
+  size "READ" -- Hack for now, will implement ACK messages later
 
-rfc :: CSpec String ()
+rfc :: CSpecS Int String ()
 rfc = call

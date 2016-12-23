@@ -47,12 +47,13 @@ instance Show Regexish where
 
 paren s = "(" ++ s ++ ")"
 
-toString :: Regexish -> String
-toString (Match s)       = s
-toString (AnyNumberOf s) = paren (toString s) ++ "*"
-toString Anything        = ".*"
-toString (Choice xs)     = paren $ intercalate "|" [toString x | x <- xs]
-toString (Sequence a b)  = toString a ++ toString b
+toString, toString' :: Regexish -> String
+toString rgx = "^" ++ toString' rgx ++ "$"
+toString' (Match s)       = s
+toString' (AnyNumberOf s) = paren (toString' s) ++ "*"
+toString' Anything        = ".*"
+toString' (Choice xs)     = paren $ intercalate "|" [toString' x | x <- xs]
+toString' (Sequence a b)  = toString' a ++ toString' b
 
 matches :: Regexish -> String -> Bool
 matches rgx s = s =~ toString rgx
@@ -86,3 +87,9 @@ x <|> y = Choice [x, y]
 
 possibly :: Regexish -> Regexish
 possibly rgx = Choice [Match "", rgx]
+
+-- Tests
+prop_genRegex_matches =
+  forAll (arbitrary :: Gen Regexish) $ \rgx ->
+  forAll (genRegex rgx) $ \s ->
+  matches rgx s
