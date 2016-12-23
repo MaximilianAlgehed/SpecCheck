@@ -27,8 +27,8 @@ ackdm    = Match "ACKD"
 acksm    = Match "ACKS"
 
 heloP     = regexP "HELO_message" helom 
-nnnmP     = regexP "Integer"      nnnm
-cccmP     = regexP "Integer"      cccm
+nnnmP     = regexP "nnn"          nnnm
+cccmP     = regexP "ccc"          cccm
 quitP     = regexP "quit"         quitm
 foldP     = regexP "fold"         foldm
 readP     = regexP "read"         readm
