@@ -106,7 +106,7 @@ sessionShrink n (x:xs) st ch
                             (Sent x, Send p cont) -> 
                                 do
                                     let Just x' = extract x
-                                    value <- lift $ lift $ shrinkValue (generator p) (predf p) x'
+                                    value <- lift $ lift $ shrinkValue p x'
                                     lift $ lift $ put ch $ (embed value)
                                     tell [Sent (embed value, (show value))]
                                     c <- lift $ cont value
@@ -137,11 +137,12 @@ sessionShrink n [] (Get p cont) ch =
                             tell [Got (mv, (show mv))]
                             return $ FailingPredicate "Type error!"
 
-shrinkValue :: (Arbitrary a) => Gen a -> (a -> Maybe String) -> a -> IO a
-shrinkValue gen pred a =
-    case [x | x <- take 50 $ shrink a, pred x == Nothing] of
-        [] -> generate gen
-        xs -> generate $ oneof (map return xs)
+shrinkValue :: (Arbitrary a) => Predicate a -> a -> IO a
+shrinkValue p a =
+  let shr = maybe ((filter ((== Nothing) . (predf p))) . shrink) id (shrinker p) in
+  case take 50 $ shr a of
+    [] -> return a
+    xs -> generate $ oneof (map return xs)
 
 traceMatch :: Interaction t -> ST m t -> Bool
 traceMatch (Got x) (Get _ _) = True

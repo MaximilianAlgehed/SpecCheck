@@ -17,9 +17,9 @@ data ST m c where
     Get    :: (Monad (m IO), Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c 
     End    :: ST m c
 
-type CSpec t r     = forall m. (Monad (m IO), MonadTrans m) => CSpecT m t r
-type CSpecS st t r = CSpecT (S.StateT st) t r
-type CSpecT m t r  = ContT (ST m t) (m IO) r
+type CSpec t r             = forall m. (Monad (m IO), MonadTrans m) => CSpecT m t r
+type CSpecS st t r         = CSpecT (S.StateT st) t r
+type CSpecT m t r          = ContT  (ST m t) (m IO) r
 
 send :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
 send p = ContT $ fmap return (Send p)
@@ -29,6 +29,15 @@ get p = ContT $ fmap return (Get p)
 
 stop :: (MonadTrans m, Monad (m IO))  => CSpecT m t a
 stop = ContT $ fmap return (const End)
+
+{- Proposed interface for bugs
+
+-- Declare what to do in the case of a bug
+bug :: Eq b => b -> CSpecT m t r b -> CSpecT m t r b -> CSpecT m t r b
+
+-- Declare what bugs are present
+sessionCheckWithBugs :: Eq b => CSpecT m t r b -> [b] -> ...
+-}
 
 choose :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
 choose = send . from

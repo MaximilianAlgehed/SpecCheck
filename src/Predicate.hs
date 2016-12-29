@@ -3,10 +3,13 @@ import Test.QuickCheck
 import Control.Monad
 import Data.List
 
-data Predicate a = Predicate {generator :: Gen a, predf :: a -> Maybe String, name :: String}
+data Predicate a = Predicate {generator :: Gen a, predf :: a -> Maybe String, name :: String, shrinker :: Maybe (a -> [a])}
 
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
-predicate s (g, p) = Predicate g (\a -> guard (not (p a)) >> return s) s
+predicate s (g, p) = Predicate g (\a -> guard (not (p a)) >> return s) s Nothing
+
+predicateShrink :: String -> (Gen a, (a -> Bool), a -> [a]) -> Predicate a
+predicateShrink s (g, p, shr) = (predicate s (g, p)) {shrinker = Just shr}
 
 -- Some generator-predicate pairs
 posNum :: (Ord a, Num a, Arbitrary a) => Predicate a
@@ -28,38 +31,54 @@ inRange :: (Ord a, Show a, Arbitrary a) => (a, a) -> Predicate a
 inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x -> x >= l && x <= h), (\x -> x >= l && x <= h))
 
 (|||) :: Predicate a -> Predicate a -> Predicate a
-(Predicate lg l ln) ||| (Predicate rg r rn) = Predicate (oneof [lg, rg]) (disj l r) (ln ++ "|||" ++ rn)
+(Predicate lg l ln ls) ||| (Predicate rg r rn rs) = Predicate (oneof [lg, rg]) (disj l r) (ln ++ "|||" ++ rn) shr
     where
         disj l r a = do
                         sl <- l a
                         sr <- r a
                         return $ "("++ sl ++ " || " ++ sr ++ ")"
+        shr = do
+          lhs <- ls
+          rhs <- rs
+          return $ \a -> lhs a ++ rhs a
 
 (&&&) :: Predicate a -> Predicate a -> Predicate a
-(Predicate lg l ln) &&& (Predicate rg r rn) = Predicate (oneof [lg, rg] `suchThat` (\a -> p a == Nothing)) p (ln ++ "&&&" ++ rn)
+(Predicate lg l ln ls) &&& (Predicate rg r rn rs) = Predicate (oneof [lg, rg] `suchThat` ((== Nothing) . p)) p (ln ++ "&&&" ++ rn) shr
     where
         p a = case r a of
                 Nothing -> case l a of
                             Nothing -> Nothing
                             Just s  -> Just s
                 Just s  -> Just s
+        shr = do
+          lhs <- ls
+          rhs <- rs
+          return $ \a -> filter ((== Nothing) . p) (lhs a ++ rhs a)
 
 (.*.) :: Predicate a -> Predicate b -> Predicate (a, b)
-(Predicate lg l ln) .*. (Predicate rg r rn) = Predicate (do
+(Predicate lg l ln ls) .*. (Predicate rg r rn rs) = Predicate (do
                                                             l <- lg
                                                             r <- rg
                                                             return (l, r))
                                                         p
                                                         (ln ++ " .*. " ++ rn)
+                                                        shr
     where
         p (a, b) = case r b of
                         Nothing -> case l a of
                                     Nothing -> Nothing
                                     Just s  -> Just s
                         Just s  -> Just s
+        shr = do
+          lhs <- ls
+          rhs <- rs
+          return $ \(a, b) -> [(a', b') | a' <- lhs a, b' <- rhs b]
 
 wildcard :: (Arbitrary a) => Predicate a
-wildcard = Predicate arbitrary (const Nothing) "_"
+wildcard = Predicate arbitrary (const Nothing) "_" Nothing
 
+-- | `from xs` creates a predicate matching `\x -> elem x xs`
+-- the predicate does shrinking by removing the selected element
+-- from the list and reconsidering
 from :: (Eq a, Show a) => [a] -> Predicate a
-from xs = predicate ("from " ++ show xs) (oneof (map return xs), \x -> x `elem` xs)
+from xs = predicateShrink ("from " ++ show xs) (oneof (map return xs), \x -> x `elem` xs, const xs)

@@ -38,7 +38,6 @@ main = do
         ph <- spawnCommand "erl -sname erl > /dev/null"
         threadDelay 2000000
         putStrLn "\nTesting protocol compliance..."
-        (self, tid) <- createSelf "haskell@localhost"
+        self <- createSelf "haskell@localhost"
         runErlangS self "erlangBooks" "main" bookShop []
-        killThread tid
         callCommand "./kill-erlang-node.sh erl"
