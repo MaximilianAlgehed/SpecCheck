@@ -24,6 +24,7 @@ import Predicate
 import System.Timeout
 import System.Process
 import System.Exit
+import GHC.IO.Handle
 import Debug.Trace
 import Prelude hiding (any)
 import Test.QuickCheck
@@ -229,24 +230,19 @@ runShellTCPT prog spec interp =
         st <- interp $ runContT spec (fmap return $ const End)
         specCheck runfun st interp
     where
-        makeUnusedPort = do
-          port <- generate $ Test.QuickCheck.choose (10000, 60000) :: IO Int
-          ph   <- runCommand ("fuser " ++ (show port) ++ "/tcp >> /dev/null 2>&1")
-          exitCode <- waitForProcess ph
-          case exitCode of
-            ExitFailure _ -> return port
-            _             -> makeUnusedPort
-
         startup = do
-          threadDelay 20000
-          port <- makeUnusedPort
-          threadDelay 20000
-          ph   <- spawnCommand $ prog ++ " " ++ show port
+          (rh, wh) <- createPipe
+          hSetBinaryMode wh False
+          hSetBuffering wh NoBuffering
+          hSetBinaryMode rh False
+          hSetBuffering rh NoBuffering
+          (_, _, _, ph) <- createProcess $ (shell prog) {std_out = UseHandle wh}
+          port <- fmap (read . head . lines) $ hGetContents rh
           threadDelay 30000
-          return (ph, port)
+          return (ph, port :: Int)
 
         connect (ph, port) ch = do
-          (socket, _) <-  N.connectSock "localhost" $ show port
+          (socket, _) <- N.connectSock "localhost" $ show port
           id1 <- forkIO $ programLoop socket ch
           id2 <- forkIO $ haskellLoop socket ch
           waitToBeKilled ch
@@ -259,7 +255,7 @@ runShellTCPT prog spec interp =
 
         runfun :: P Chan String -> IO ()
         runfun ch = do
-          phprt <- startup `catch` (const startup :: SomeException -> IO (ProcessHandle, Int))
+          phprt <- startup
           connect phprt ch 
 
         programLoop socket ch =
