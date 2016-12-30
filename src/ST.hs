@@ -23,6 +23,7 @@ import Control.DeepSeq
 import Predicate
 import System.Timeout
 import System.Process
+import System.Exit
 import Debug.Trace
 import Prelude hiding (any)
 import Test.QuickCheck
@@ -228,15 +229,23 @@ runShellTCPT prog spec interp =
         st <- interp $ runContT spec (fmap return $ const End)
         specCheck runfun st interp
     where
+        makeUnusedPort = do
+          port <- generate $ Test.QuickCheck.choose (1000, 60000) :: IO Int
+          ph   <- runCommand ("fuser " ++ (show port) ++ "/tcp > /dev/null")
+          exitCode <- waitForProcess ph
+          case exitCode of
+            ExitFailure _ -> return port
+            _             -> makeUnusedPort
+
         startup = do
-          port <- generate   $ Test.QuickCheck.choose (1000, 60000) :: IO Int
+          port <- makeUnusedPort
           threadDelay 20000
-          ph   <- spawnCommand $ prog ++ " " ++ (show port)
+          ph   <- spawnCommand $ prog ++ " " ++ show port
           threadDelay 30000
           return (ph, port)
 
         connect (ph, port) ch = do
-          (socket, _) <-  N.connectSock "localhost" (show port)
+          (socket, _) <-  N.connectSock "localhost" $ show port
           id1 <- forkIO $ programLoop socket ch
           id2 <- forkIO $ haskellLoop socket ch
           waitToBeKilled ch
