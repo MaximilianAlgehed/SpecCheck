@@ -230,14 +230,15 @@ runShellTCPT prog spec interp =
         specCheck runfun st interp
     where
         makeUnusedPort = do
-          port <- generate $ Test.QuickCheck.choose (1000, 60000) :: IO Int
-          ph   <- runCommand ("fuser " ++ (show port) ++ "/tcp > /dev/null")
+          port <- generate $ Test.QuickCheck.choose (10000, 60000) :: IO Int
+          ph   <- runCommand ("fuser " ++ (show port) ++ "/tcp >> /dev/null 2>&1")
           exitCode <- waitForProcess ph
           case exitCode of
             ExitFailure _ -> return port
             _             -> makeUnusedPort
 
         startup = do
+          threadDelay 20000
           port <- makeUnusedPort
           threadDelay 20000
           ph   <- spawnCommand $ prog ++ " " ++ show port
@@ -264,15 +265,17 @@ runShellTCPT prog spec interp =
         programLoop socket ch =
             do
                mmsg <- readLineFrom socket
+               threadDelay 10
                case mmsg of
                   Nothing  -> return ()
                   Just msg -> do
-                    BCH.put ch $ (embed msg)
+                    BCH.put ch $ msg
                     programLoop socket ch
         
         haskellLoop socket ch =
             do
                 m <- BCH.get ch
+                threadDelay 10
                 N.send socket (BS.pack $ embed m ++ "\n")
                 haskellLoop socket ch
 
