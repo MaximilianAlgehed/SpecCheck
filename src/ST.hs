@@ -1,11 +1,3 @@
-{-
- - This file needs some major refactoring,
- - if you are afraid of ugly code, look away now.
- -
- - We should try to do something about the (a -> Maybe String)
- - thing, it must be possible to abstract this somehow.
- -}
-
 {-# LANGUAGE GADTs,
              TypeOperators,
              MultiParamTypeClasses,
