@@ -22,6 +22,7 @@ import Control.Monad.Trans
 import Control.DeepSeq
 import Predicate
 import System.Timeout
+import System.Process
 import Debug.Trace
 import Prelude hiding (any)
 import Test.QuickCheck
@@ -36,6 +37,9 @@ import Typeclasses
 import Control.Monad.Cont
 import Control.Monad.Trans.Identity
 import qualified Control.Monad.Trans.State as S
+import Control.Exception
+import qualified Network.Simple.TCP as N
+import qualified Data.ByteString.Char8 as BS
 import Control.Exception
 
 erlBool True = ErlAtom "true"
@@ -213,6 +217,73 @@ runErlangS :: (Erlang t, Show t)
           -> st
           -> IO ()
 runErlangS self mod fun spec state = runErlangT self mod fun spec (flip S.evalStateT state)
+
+runShellTCPT :: (MonadTrans m, Monad (m IO))
+             => String -- shell command
+             -> CSpecT m String a -- The session type for the interaction
+             -> (forall a. m IO a -> IO a) -- Interpretation function for the monad transformer
+             -> IO ()
+runShellTCPT prog spec interp =
+    do
+        st <- interp $ runContT spec (fmap return $ const End)
+        specCheck runfun st interp
+    where
+        startup = do
+          ph <- spawnCommand prog
+          threadDelay 2000
+          ec <- getProcessExitCode ph
+          case ec of
+            Nothing -> return ph
+            _       -> startup
+
+        connect ph ch =
+          N.connect "localhost" "6060" $ \(socket, _) ->
+              do
+                id1 <- forkIO $ programLoop socket ch
+                id2 <- forkIO $ haskellLoop socket ch
+                waitToBeKilled ch
+                finish id1 id2
+                terminateProcess ph
+                waitForProcess ph
+                killAcc ch
+
+        runfun :: P Chan String -> IO ()
+        runfun ch = do
+          ph <- startup
+          connect ph ch 
+
+        finish id1 id2 =
+            do
+                killThread id1
+                killThread id2
+
+        programLoop socket ch =
+            do
+               msg <- readLineFrom socket
+               put ch $ msg
+               programLoop socket ch
+        
+        haskellLoop socket ch =
+            do
+                m <- BCH.get ch
+                N.send socket (BS.pack $ embed m ++ "\n")
+                haskellLoop socket ch
+
+runShellTCPS :: String -> CSpecS st String a -> st -> IO ()
+runShellTCPS prog spec st = runShellTCPT prog spec (flip S.evalStateT st)
+
+runShellTCP :: String -> CSpec String a -> IO ()
+runShellTCP prog spec = runShellTCPS prog spec ()
+
+readLineFrom :: N.Socket -> IO String
+readLineFrom = doTheReading ""
+  where
+    doTheReading xs socket = do
+      c <- fmap (fmap (head . BS.unpack)) $ N.recv socket 1
+      case c of
+        Just '\n' -> return (reverse xs)
+        Just x    -> doTheReading (x:xs) socket
+        Nothing   -> return (reverse xs)
 
 -- Run some tests
 specCheck :: (BiChannel ch c, Show c, MonadTrans m, Monad (m IO))

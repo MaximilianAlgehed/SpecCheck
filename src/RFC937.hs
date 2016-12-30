@@ -64,16 +64,13 @@ nmbr = do
     (readm, size next),
     (foldm, nmbr)]
 
-parseRead :: String -> Int
-parseRead = read . drop 5
-
 size :: String -> CSpecS Int String ()
 size trans = do
   case trans of
     "READ" -> return ()
     "ACKD" -> modify (+1)
     "ACKS" -> modify (+1)
-    xs     -> store (parseRead xs) 
+    xs     -> store (read $ drop 5 xs) 
 
   rep   <- get cccmP
   let sz = read (tail rep)
