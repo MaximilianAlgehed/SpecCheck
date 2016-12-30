@@ -229,39 +229,37 @@ runShellTCPT prog spec interp =
         specCheck runfun st interp
     where
         startup = do
-          ph <- spawnCommand prog
-          threadDelay 2000
-          ec <- getProcessExitCode ph
-          case ec of
-            Nothing -> return ph
-            _       -> startup
+          port <- generate   $ Test.QuickCheck.choose (1000, 60000) :: IO Int
+          threadDelay 20000
+          ph   <- spawnCommand $ prog ++ " " ++ (show port)
+          threadDelay 30000
+          return (ph, port)
 
-        connect ph ch =
-          N.connect "localhost" "6060" $ \(socket, _) ->
-              do
-                id1 <- forkIO $ programLoop socket ch
-                id2 <- forkIO $ haskellLoop socket ch
-                waitToBeKilled ch
-                finish id1 id2
-                terminateProcess ph
-                waitForProcess ph
-                killAcc ch
+        connect (ph, port) ch = do
+          (socket, _) <-  N.connectSock "localhost" (show port)
+          id1 <- forkIO $ programLoop socket ch
+          id2 <- forkIO $ haskellLoop socket ch
+          waitToBeKilled ch
+          killThread id1
+          N.closeSock socket
+          killThread id2
+          terminateProcess ph
+          waitForProcess ph
+          killAcc ch
 
         runfun :: P Chan String -> IO ()
         runfun ch = do
-          ph <- startup
-          connect ph ch 
-
-        finish id1 id2 =
-            do
-                killThread id1
-                killThread id2
+          phprt <- startup `catch` (const startup :: SomeException -> IO (ProcessHandle, Int))
+          connect phprt ch 
 
         programLoop socket ch =
             do
-               msg <- readLineFrom socket
-               put ch $ msg
-               programLoop socket ch
+               mmsg <- readLineFrom socket
+               case mmsg of
+                  Nothing  -> return ()
+                  Just msg -> do
+                    BCH.put ch $ (embed msg)
+                    programLoop socket ch
         
         haskellLoop socket ch =
             do
@@ -275,15 +273,15 @@ runShellTCPS prog spec st = runShellTCPT prog spec (flip S.evalStateT st)
 runShellTCP :: String -> CSpec String a -> IO ()
 runShellTCP prog spec = runShellTCPS prog spec ()
 
-readLineFrom :: N.Socket -> IO String
+readLineFrom :: N.Socket -> IO (Maybe String)
 readLineFrom = doTheReading ""
   where
     doTheReading xs socket = do
-      c <- fmap (fmap (head . BS.unpack)) $ N.recv socket 1
+      c <- (fmap (fmap (head . BS.unpack)) $ N.recv socket 1) `catch` (const (return (Just '\n')) :: SomeException -> IO (Maybe Char))
       case c of
-        Just '\n' -> return (reverse xs)
+        Just '\n' -> return $ Just (reverse xs)
         Just x    -> doTheReading (x:xs) socket
-        Nothing   -> return (reverse xs)
+        Nothing   -> return Nothing
 
 -- Run some tests
 specCheck :: (BiChannel ch c, Show c, MonadTrans m, Monad (m IO))

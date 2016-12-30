@@ -3,7 +3,7 @@ import socket
 import sys
 
 HOST = "localhost"               # Symbolic name meaning all available interfaces
-PORT = 6060               # Arbitrary non-privileged port
+PORT = int(sys.argv[1])               # Arbitrary non-privileged port
 s = None
 for res in socket.getaddrinfo(HOST, PORT, socket.AF_UNSPEC, socket.SOCK_STREAM, 0, socket.AI_PASSIVE):
     af, socktype, proto, canonname, sa = res
@@ -24,3 +24,4 @@ while True:
 
 conn.send(msg)
 conn.close()
+s.close()
