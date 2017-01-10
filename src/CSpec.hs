@@ -43,6 +43,9 @@ sessionCheckWithBugs :: Eq b => CSpecT m t r b -> [b] -> ...
 choose :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
 choose = send . from
 
+chooseFreq :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [(Int, a)] -> CSpecT m t a
+chooseFreq = send . fromFreq
+
 branch :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
 branch = get . from
 

@@ -17,7 +17,16 @@ library
   hs-source-dirs:      src
   exposed-modules:     ST,
                        Typeclasses,
-                       BiCh
+                       BiCh,
+                       CSpec,
+                       Predicate
   build-depends:       base >= 4.7 && < 5,
-                       erlang >= 0.2
+                       erlang >= 0.2,
+                       QuickCheck,
+                       mtl,
+                       transformers,
+                       deepseq,
+                       process,
+                       network-simple,
+                       bytestring
   default-language:    Haskell2010

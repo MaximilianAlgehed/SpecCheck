@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
 import Typeclasses
 import Test.QuickCheck hiding (choose)
 import ST
@@ -15,16 +16,16 @@ import Data.Generics
 import Regexish
 
 {- The simple interpretation -}
-helom    = Match "HELO " >*> word >*> Match " " >*> word 
-nnnm     = Match "#"     >*> integer
-cccm     = Match "="     >*> integer
-quitm    = Match "QUIT"
-foldm    = Match "FOLD " >*> word
-readm    = Match "READ"  >*> possibly (Match " " >*> integer)
-retrm    = Match "RETR"
-greeting = Match "POP2 " >*> Anything
-ackdm    = Match "ACKD"
-acksm    = Match "ACKS"
+helom    = "HELO " >*> word >*> " " >*> word 
+nnnm     = "#"     >*> integer
+cccm     = "="     >*> integer
+quitm    = "QUIT"
+foldm    = "FOLD " >*> word
+readm    = "READ"  >*> possibly (" " >*> integer)
+retrm    = "RETR"
+greeting = "POP2 " >*> Anything
+ackdm    = "ACKD"
+acksm    = "ACKS"
 
 heloP     = regexP "HELO_message" helom 
 nnnmP     = regexP "nnn"          nnnm
@@ -36,12 +37,6 @@ retrP     = regexP "retr"         retrm
 greetingP = regexP "greeting"     greeting
 ackdP     = regexP "ackd"         ackdm
 acksP     = regexP "acks"         acksm 
-
-transition :: Monad m => String -> [(Regexish, m ())] -> m ()
-transition s []       = return ()
-transition s (x:xs) 
-  | matches (fst x) s = snd x
-  | otherwise         = transition s xs 
 
 -- Simplified POP2 protocol
 

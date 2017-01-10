@@ -1,4 +1,8 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Regexish where
+import Data.String
 import Text.Regex.Posix
 import Test.QuickCheck
 import Control.Monad
@@ -43,7 +47,11 @@ instance Arbitrary Regexish where
 instance Show Regexish where
   show = toString
 
-(>*>)  = Sequence
+instance IsString Regexish where
+  fromString = Match
+
+(>*>) :: Regexish -> Regexish -> Regexish
+(>*>) = Sequence
 
 paren s = "(" ++ s ++ ")"
 
@@ -87,6 +95,12 @@ x <|> y = Choice [x, y]
 
 possibly :: Regexish -> Regexish
 possibly rgx = Choice [Match "", rgx]
+
+transition :: (Monad m) => String -> [(Regexish, m ())] -> m ()
+transition s []       = return ()
+transition s (x:xs) 
+  | matches (fst x) s = snd x
+  | otherwise                    = transition s xs 
 
 -- Tests
 prop_genRegex_matches =

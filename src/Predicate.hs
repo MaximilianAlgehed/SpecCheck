@@ -82,3 +82,8 @@ wildcard = Predicate arbitrary (const Nothing) "_" Nothing
 -- from the list and reconsidering
 from :: (Eq a, Show a) => [a] -> Predicate a
 from xs = predicateShrink ("from " ++ show xs) (oneof (map return xs), \x -> x `elem` xs, const xs)
+
+fromFreq :: (Eq a, Show a) => [(Int, a)] -> Predicate a
+fromFreq xs = predicateShrink ("fromFreq " ++ show xs) (oneof (map (return . snd) xs), \x -> x `elem` (map snd xs), const (unFreq xs))
+  where
+    unFreq = concat . map (uncurry replicate) 
