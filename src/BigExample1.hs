@@ -35,7 +35,7 @@ buyBook =
 
 removeBook :: CSpecS ShoppingState ErlType ()
 removeBook =
-   do
+  do
     books       <- basket <$> state
     if null books then
         return ()
