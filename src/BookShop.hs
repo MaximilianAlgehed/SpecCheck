@@ -37,5 +37,5 @@ main = do
   threadDelay 2000000
   putStrLn "\nTesting protocol compliance..."
   self <- createSelf "haskell@localhost"
-  runErlangS self "erlangBooks" "main" bookShop []
+  runErlangS self "erlangBooks" "main" [] bookShop []
   callCommand "./kill-erlang-node.sh erl"

@@ -16,12 +16,12 @@ data Interaction t = Got t | Sent t deriving (Show, Functor)
 type Log t = [Interaction t]
 
 -- | BiChannel interaction
-data P a x = P (a x) (a x) (a ()) (a ())
+data P a x = P (a (Maybe x)) (a (Maybe x)) (a ()) (a ())
 
 class BiChannel ch t where
     new :: IO (ch t)
-    put :: ch t -> t -> IO ()
-    get :: ch t -> IO t
+    put :: ch t -> (Maybe t) -> IO ()
+    get :: ch t -> IO (Maybe t)
     bidirect :: ch t -> ch t
     kill :: ch t -> IO ()
     killAcc :: ch t -> IO ()

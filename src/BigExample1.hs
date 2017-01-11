@@ -13,7 +13,7 @@ import Control.Monad.Trans.Cont
 import Data.List
 
 type ProductID = Int
-type Price     = Double
+type Price     = Int 
 data ShoppingState = ShoppingState {basket :: [ProductID],
                                     price  :: Price}
 
@@ -38,7 +38,7 @@ removeBook =
   do
     books       <- basket <$> state
     if null books then
-        return ()
+        bug "bug_002" (return ()) $ void (send (is (-1 :: Int)))
     else
       do
         removedBook <- send (from books)
@@ -67,7 +67,12 @@ relevantResults s = predicate ("relevantResults "++s)
 getBasket :: CSpecS ShoppingState ErlType ()
 getBasket = do
   s   <- state
-  void $ get $ permutationOf (basket s) .*. is (price s)
+  bug "bug_001"
+    (void $ get $ permutationOf (basket s) .*. is (price s))
+    $ do
+        get $ permutationOf (basket s)
+        bug "bug_003" (get $ is (price s)) (get $ is (price s + 2))
+        return ()
 
 bookProtocol :: CSpecS ShoppingState ErlType ()
 bookProtocol = forever $ do
@@ -80,9 +85,10 @@ bookProtocol = forever $ do
     "search" -> searchBooks
 
 main = do
+  let bugs = ["bug_001", "bug_002", "bug_003"]
   coherentS bookProtocol initialShoppingState
   ph <- spawnCommand "erl -sname erl > /dev/null"
   threadDelay 2000000
   self <- createSelf "haskell@localhost"
-  runErlangS self "bigExample" "main" bookProtocol initialShoppingState
+  runErlangS self "bigExample" "main" bugs bookProtocol initialShoppingState
   callCommand "./kill-erlang-node.sh erl"

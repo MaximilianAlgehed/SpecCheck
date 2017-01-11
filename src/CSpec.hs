@@ -4,6 +4,7 @@
 module CSpec where
 import Control.Monad.Trans
 import Control.Monad.Trans.Cont
+import Control.Monad.Trans.Reader
 import Predicate
 import Typeclasses
 import Test.QuickCheck
@@ -19,26 +20,25 @@ data ST m c where
 
 type CSpec t r     = forall m. (Monad (m IO), MonadTrans m) => CSpecT m t r
 type CSpecS st t r = CSpecT (S.StateT st) t r
-type CSpecT m t r  = ContT  (ST m t) (m IO) r
+type CSpecT m t r  = ReaderT [String] (ContT  (ST m t) (m IO)) r
 
 send :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
-send p = ContT $ fmap return (Send p)
+send p = lift $ ContT $ fmap return (Send p)
 
 get :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
-get p = ContT $ fmap return (Get p)
+get p = lift $ ContT $ fmap return (Get p)
 
 stop :: (MonadTrans m, Monad (m IO))  => CSpecT m t a
-stop = ContT $ fmap return (const End)
-
-{- Proposed interface for bugs
+stop = lift $ ContT $ fmap return (const End)
 
 -- Declare what to do in the case of a bug
-bug :: Eq b => b -> CSpecT m t r b -> CSpecT m t r b -> CSpecT m t r b
-
--- Declare what bugs are present
-sessionCheckWithBugs :: Eq b => CSpecT m t r b -> [b] -> ...
-
--}
+bug :: String -> CSpecT m t r -> CSpecT m t r -> CSpecT m t r
+bug b nonBuggy buggy = do
+  bugs <- ask
+  if b `elem` bugs then
+    buggy
+  else
+    nonBuggy
 
 choose :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
 choose = send . from
@@ -50,16 +50,16 @@ branch :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, E
 branch = get . from
 
 state :: CSpecS st t st
-state = lift S.get
+state = lift $ lift S.get
 
 modify :: (st -> st) -> CSpecS st t ()
-modify = lift . S.modify
+modify = lift . lift . S.modify
 
 store :: st -> CSpecS st t ()
-store = lift . S.put
+store = lift . lift . S.put
 
 dual :: (Functor (m IO)) => CSpecT m t a -> CSpecT m t a
-dual = mapContT (fmap dualST) 
+dual = mapReaderT (mapContT (fmap dualST))
 
 dualST :: (Functor (m IO)) => ST m a -> ST m a
 dualST (Send pred cont) = Get pred  $ \a -> fmap dualST (cont a)

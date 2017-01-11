@@ -6,6 +6,7 @@
              UndecidableInstances,
              OverlappingInstances #-}
 module Typeclasses where
+import Data.Maybe
 import Foreign.Erlang
 import Data.Char
 
@@ -101,5 +102,3 @@ instance (a :<: ErlType) => Maybe a :<: ErlType where
 instance (t :<: ErlType) => Erlang t where
     toErlang = embed
     fromErlang = fromJust . extract -- unsafe
-
-fromJust (Just x) = x

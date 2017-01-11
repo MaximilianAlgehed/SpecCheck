@@ -9,8 +9,10 @@
              UndecidableInstances,
              ScopedTypeVariables #-}
 module ST where
+import Data.Maybe
 import CSpec
 import Control.Monad.Trans
+import Control.Monad.Trans.Reader
 import Control.DeepSeq
 import Predicate
 import System.Timeout
@@ -46,14 +48,16 @@ sessionTest :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
 sessionTest (Send p cont) ch =
     do
         value <- lift $ lift $ generate (generator p)
-        lift $ lift $ put ch $ embed value
+        lift $ lift $ put ch $ Just $ embed value
         tell [Sent (embed value, show value)]
         c <- lift $ cont value
         sessionTest c ch
 sessionTest (Get p cont) ch =
     do
-        mv <- lift $ lift $ BCH.get ch
-        case extract mv of
+        mmv <- lift $ lift $ BCH.get ch
+        case mmv of
+          Nothing -> return $ Just "Timeout!"
+          Just mv -> case extract mv of
             Just value -> if predf p value == Nothing then
                             do
                                 tell [Got (mv, show value)]
@@ -87,8 +91,10 @@ sessionShrink n (x:xs) st ch
     | traceMatch x st   = case (x, st) of
                             (Got _, Get p cont) ->
                                 do
-                                    mv <- lift $ lift $ BCH.get ch
-                                    case extract mv of
+                                    mmv <- lift $ lift $ BCH.get ch
+                                    case mmv of
+                                      Nothing -> return $ FailingPredicate "Timeout!"
+                                      Just mv -> case extract mv of
                                         Just value -> if predf p value == Nothing then
                                                         do
                                                             tell [Got (mv, (show value))]
@@ -105,7 +111,7 @@ sessionShrink n (x:xs) st ch
                                 do
                                     let Just x' = extract x
                                     value <- lift $ lift $ shrinkValue p x'
-                                    lift $ lift $ put ch $ (embed value)
+                                    lift $ lift $ put ch $ Just $ embed value
                                     tell [Sent (embed value, (show value))]
                                     c <- lift $ cont value
                                     sessionShrink (n-1) xs c ch
@@ -114,14 +120,16 @@ sessionShrink n (x:xs) st ch
 sessionShrink n [] (Send p cont) ch =
     do
         value <- lift $ lift $ generate (generator p)
-        lift $ lift $ put ch $ (embed value)
+        lift $ lift $ put ch $ Just $ embed value
         tell [Sent (embed value, (show value))]
         c <- lift $ cont value
         sessionShrink (n-1) [] c ch
 sessionShrink n [] (Get p cont) ch =
     do
-        mv <- lift $ lift $ BCH.get ch
-        case extract mv of
+        mmv <- lift $ lift $ BCH.get ch
+        case mmv of
+          Nothing -> return $ FailingPredicate "Timeout!"
+          Just mv -> case extract mv of
             Just value -> if predf p value == Nothing then
                             do
                                 tell [Got (mv, (show value))]
@@ -155,12 +163,13 @@ runErlangT :: (Erlang t, Show t, MonadTrans m, Monad (m IO))
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
+          -> [String] -- Bugs
           -> CSpecT m t a -- The session type for the interaction
           -> (forall a. m IO a -> IO a)
           -> IO ()
-runErlangT self mod fun spec interp =
+runErlangT self mod fun bugs spec interp =
     do
-        st <- interp $ runContT spec (fmap return $ const End)
+        st <- interp $ runContT (runReaderT spec bugs) (fmap return $ const End)
         specCheck (runfun self) st interp
     where
         runfun :: Erlang t => Self -> P Chan t -> IO ()
@@ -185,13 +194,12 @@ runErlangT self mod fun spec interp =
 
         erlangLoop ch mbox =
             do
-               m <- mboxRecv mbox
-               put ch $ fromErlang m
-               erlangLoop ch mbox
+               mmsg <- timeout 100000 $ mboxRecv mbox
+               fromMaybe (BCH.put ch Nothing) (fmap (\msg -> (BCH.put ch $ Just $ fromErlang msg) >> erlangLoop ch mbox) mmsg)
         
         haskellLoop ch mbox =
             do
-                m <- BCH.get ch
+                (Just m) <- BCH.get ch
                 mboxSend mbox (Short "erl") (Right "p") (mboxSelf mbox, m)
                 haskellLoop ch mbox
 
@@ -199,27 +207,30 @@ runErlang :: (Erlang t, Show t)
           => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
+          -> [String] -- Bugs
           -> CSpec t a -- The session type for the interaction
           -> IO ()
-runErlang self mod fun spec = runErlangS self mod fun spec ()
+runErlang self mod fun bugs spec = runErlangS self mod fun bugs spec ()
 
 runErlangS :: (Erlang t, Show t)
            => Self -- Created by "createSelf \"name@localhost\""
           -> String -- module name
           -> String -- function name
+          -> [String] -- Bugs
           -> CSpecS st t a -- The session type for the interaction
           -> st
           -> IO ()
-runErlangS self mod fun spec state = runErlangT self mod fun spec (flip S.evalStateT state)
+runErlangS self mod fun bugs spec state = runErlangT self mod fun bugs spec (flip S.evalStateT state)
 
 runShellTCPT :: (MonadTrans m, Monad (m IO))
              => String -- shell command
+             -> [String] -- Bugs
              -> CSpecT m String a -- The session type for the interaction
              -> (forall a. m IO a -> IO a) -- Interpretation function for the monad transformer
              -> IO ()
-runShellTCPT prog spec interp =
+runShellTCPT prog bugs spec interp =
     do
-        st <- interp $ runContT spec (fmap return $ const End)
+        st <- interp $ runContT (runReaderT spec bugs) (fmap return $ const End)
         specCheck runfun st interp
     where
         startup = do
@@ -252,26 +263,22 @@ runShellTCPT prog spec interp =
 
         programLoop socket ch =
             do
-               mmsg <- readLineFrom socket
+               msg <- timeout 10000 $ readLineFrom socket
                threadDelay 10
-               case mmsg of
-                  Nothing  -> return ()
-                  Just msg -> do
-                    BCH.put ch $ msg
-                    programLoop socket ch
+               fromMaybe (BCH.put ch Nothing) (fmap (\msg -> (BCH.put ch $ Just msg) >> programLoop socket ch) (join msg))
         
         haskellLoop socket ch =
             do
-                m <- BCH.get ch
+                (Just m) <- BCH.get ch
                 threadDelay 10
                 N.send socket (BS.pack $ embed m ++ "\n")
                 haskellLoop socket ch
 
-runShellTCPS :: String -> CSpecS st String a -> st -> IO ()
-runShellTCPS prog spec st = runShellTCPT prog spec (flip S.evalStateT st)
+runShellTCPS :: String -> [String] -> CSpecS st String a -> st -> IO ()
+runShellTCPS prog bugs spec st = runShellTCPT prog bugs spec (flip S.evalStateT st)
 
-runShellTCP :: String -> CSpec String a -> IO ()
-runShellTCP prog spec = runShellTCPS prog spec ()
+runShellTCP :: String -> [String] -> CSpec String a -> IO ()
+runShellTCP prog bugs spec = runShellTCPS prog bugs spec ()
 
 readLineFrom :: N.Socket -> IO (Maybe String)
 readLineFrom = doTheReading ""
@@ -374,7 +381,7 @@ checkCoherence End           = return True
 
 coherentT :: (MonadTrans m, Monad (m IO)) => CSpecT m c a -> (forall a. m IO a -> IO a) -> IO ()
 coherentT spec interp = do
-                          st <- interp $ runContT spec (fmap return $ const End)
+                          st <- interp $ runContT (runReaderT spec []) (fmap return $ const End)
                           coherent' st 100
     where
         coherent' _ 0 = putStrLn "\rPassed"
