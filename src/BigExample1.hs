@@ -1,4 +1,11 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
+import Debug.Trace
+import GHC.Generics hiding (from)
+import Control.DeepSeq
 import Control.Concurrent
 import System.Process 
 import Test.QuickCheck hiding (choose)
@@ -12,10 +19,10 @@ import Control.Monad.Trans
 import Control.Monad.Trans.Cont
 import Data.List
 
-type ProductID = Int
-type Price     = Int 
+type ProductID     = Int
+type Price         = Int 
 data ShoppingState = ShoppingState {basket :: [ProductID],
-                                    price  :: Price}
+                                    price  :: Price} deriving (Generic, NFData, Show)
 
 initialShoppingState = ShoppingState {
                         basket = [],
@@ -66,16 +73,17 @@ relevantResults s = predicate ("relevantResults "++s)
 
 getBasket :: CSpecS ShoppingState ErlType ()
 getBasket = do
-  s   <- state
+  s <- state
   bug "bug_001"
     (void $ get $ permutationOf (basket s) .*. is (price s))
     $ do
         get $ permutationOf (basket s)
-        bug "bug_003" (get $ is (price s)) (get $ is (price s + 2))
+        get $ is (price s)
         return ()
 
 bookProtocol :: CSpecS ShoppingState ErlType ()
-bookProtocol = forever $ do
+bookProtocol = do
+  bug "bug_003" (return ()) (modify $ \st -> st {price = price st + 2}) -- We are having some serious bug issues at the moment
   action <- choose ["finish", "buy", "basket", "remove", "search"]
   case action of
     "finish" -> stop

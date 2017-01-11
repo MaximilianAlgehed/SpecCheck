@@ -53,10 +53,10 @@ state :: CSpecS st t st
 state = lift $ lift S.get
 
 modify :: (st -> st) -> CSpecS st t ()
-modify = lift . lift . S.modify
+modify fun = lift $ lift $ S.modify fun
 
 store :: st -> CSpecS st t ()
-store = lift . lift . S.put
+store st = lift $ lift $ S.put st
 
 dual :: (Functor (m IO)) => CSpecT m t a -> CSpecT m t a
 dual = mapReaderT (mapContT (fmap dualST))
