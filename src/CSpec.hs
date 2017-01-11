@@ -16,6 +16,7 @@ import qualified Control.Monad.Trans.State as S
 data ST m c where
   Send   :: (Monad (m IO), Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c
   Get    :: (Monad (m IO), Arbitrary a, Show a, a :<: c, NFData a) => Predicate a -> (a -> m IO (ST m c)) -> ST m c 
+  Nop    :: (() -> m IO (ST m c)) -> ST m c
   End    :: ST m c
 
 type CSpec t r     = forall m. (Monad (m IO), MonadTrans m) => CSpecT m t r
@@ -30,6 +31,9 @@ get p = lift $ ContT $ fmap return (Get p)
 
 stop :: (MonadTrans m, Monad (m IO))  => CSpecT m t a
 stop = lift $ ContT $ fmap return (const End)
+
+nop :: (MonadTrans m, Monad (m IO)) => CSpecT m t ()
+nop = lift $ ContT $ fmap return Nop
 
 -- Declare what to do in the case of a bug
 bug :: String -> CSpecT m t r -> CSpecT m t r -> CSpecT m t r
@@ -50,13 +54,13 @@ branch :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, E
 branch = get . from
 
 state :: CSpecS st t st
-state = lift $ lift S.get
+state = nop >> (lift $ lift S.get)
 
 modify :: (st -> st) -> CSpecS st t ()
-modify fun = lift $ lift $ S.modify fun
+modify fun = nop >> (lift $ lift $ S.modify fun)
 
 store :: st -> CSpecS st t ()
-store st = lift $ lift $ S.put st
+store st = nop >> (lift $ lift $ S.put st)
 
 dual :: (Functor (m IO)) => CSpecT m t a -> CSpecT m t a
 dual = mapReaderT (mapContT (fmap dualST))
@@ -64,4 +68,5 @@ dual = mapReaderT (mapContT (fmap dualST))
 dualST :: (Functor (m IO)) => ST m a -> ST m a
 dualST (Send pred cont) = Get pred  $ \a -> fmap dualST (cont a)
 dualST (Get pred cont)  = Send pred $ \a -> fmap dualST (cont a)
+dualST (Nop f)          = Nop $ \() -> fmap dualST (f ())
 dualST End              = End

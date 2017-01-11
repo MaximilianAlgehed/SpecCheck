@@ -45,6 +45,9 @@ sessionTest :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
             => ST m c
             -> ch c
             -> WriterT (Log (c, String)) (m IO) (Maybe String)
+sessionTest (Nop f) ch = do
+  c <- lift $ f ()
+  sessionTest c ch
 sessionTest (Send p cont) ch =
     do
         value <- lift $ lift $ generate (generator p)
@@ -86,6 +89,9 @@ sessionShrink :: (Show c, BiChannel ch c, MonadTrans m, Monad (m IO))
             -> WriterT (Log (c, String)) (m IO) ShrinkStatus -- Fix the return type to be "Log (c, String)" instead
                                                          -- of "Log String"
 sessionShrink 0 _ _   _ = return FailedToShrink -- Our trace is longer than the original trace
+sessionShrink a b (Nop f) d = do
+  c <- lift $ f ()
+  sessionShrink a b c d
 sessionShrink _ _ End _ = return FailedToShrink -- We didn't failsify the property
 sessionShrink n (x:xs) st ch
     | traceMatch x st   = case (x, st) of
@@ -341,6 +347,9 @@ specCheck impl t interp = loop m
                                 FailingPredicate s' -> shrinkLoop (n-1) s' w
 
 checkCoherence :: (MonadTrans m, Monad (m IO)) => ST m c -> WriterT (Log (c, String)) (m IO) Bool
+checkCoherence (Nop f) = do
+  c <- lift $ f ()
+  checkCoherence c
 checkCoherence (Send p cont) =
     do
         mv <- lift $ lift $ tryGen (generator p)
