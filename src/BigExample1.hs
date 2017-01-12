@@ -53,9 +53,11 @@ removeBook =
 
 searchBooks :: CSpec ErlType ()
 searchBooks =
-  do
+  bug "bug_005"
+  (do
     query <- send wildcard
-    void $ get $ relevantResults query
+    void $ get $ relevantResults query)
+  (void $ get (is @[Int] []))
 
 relevantResults :: String -> Predicate [(String, ProductID)]
 relevantResults s = predicate ("relevantResults "++s)
@@ -77,7 +79,7 @@ getBasket = do
   bug "bug_001"
     (void $ get $ permutationOf (basket s) .*. is (price s))
     $ do
-        get $ permutationOf (basket s)
+        bug "bug_004" (get $ permutationOf (basket s)) (get (is []))
         get $ is (price s)
         return ()
 
@@ -95,7 +97,7 @@ bookProtocol = do
 
 main :: IO ()
 main = do
-  let bugs = ["bug_001", "bug_002", "bug_003"]
+  let bugs = ["bug_001", "bug_002", "bug_003", "bug_004", "bug_005"]
   coherentS bookProtocol initialShoppingState
   ph <- spawnCommand "erl -sname erl > /dev/null"
   threadDelay 2000000
