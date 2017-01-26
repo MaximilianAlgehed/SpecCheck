@@ -170,7 +170,7 @@ runErlangT :: (Erlang t, Show t, MonadTrans m, Monad (m IO))
           -> String -- module name
           -> String -- function name
           -> [String] -- Bugs
-          -> CSpecT m t a -- The session type for the interaction
+          -> SpecT m t a -- The session type for the interaction
           -> (forall a. m IO a -> IO a)
           -> IO ()
 runErlangT self mod fun bugs spec interp =
@@ -214,7 +214,7 @@ runErlang :: (Erlang t, Show t)
           -> String -- module name
           -> String -- function name
           -> [String] -- Bugs
-          -> CSpec t a -- The session type for the interaction
+          -> Spec t a -- The session type for the interaction
           -> IO ()
 runErlang self mod fun bugs spec = runErlangS self mod fun bugs spec ()
 
@@ -223,7 +223,7 @@ runErlangS :: (Erlang t, Show t)
           -> String -- module name
           -> String -- function name
           -> [String] -- Bugs
-          -> CSpecS st t a -- The session type for the interaction
+          -> SpecS st t a -- The session type for the interaction
           -> st
           -> IO ()
 runErlangS self mod fun bugs spec state = runErlangT self mod fun bugs spec (flip S.evalStateT state)
@@ -231,7 +231,7 @@ runErlangS self mod fun bugs spec state = runErlangT self mod fun bugs spec (fli
 runShellTCPT :: (MonadTrans m, Monad (m IO))
              => String -- shell command
              -> [String] -- Bugs
-             -> CSpecT m String a -- The session type for the interaction
+             -> SpecT m String a -- The session type for the interaction
              -> (forall a. m IO a -> IO a) -- Interpretation function for the monad transformer
              -> IO ()
 runShellTCPT prog bugs spec interp =
@@ -280,10 +280,10 @@ runShellTCPT prog bugs spec interp =
                 N.send socket (BS.pack $ embed m ++ "\n")
                 haskellLoop socket ch
 
-runShellTCPS :: String -> [String] -> CSpecS st String a -> st -> IO ()
+runShellTCPS :: String -> [String] -> SpecS st String a -> st -> IO ()
 runShellTCPS prog bugs spec st = runShellTCPT prog bugs spec (flip S.evalStateT st)
 
-runShellTCP :: String -> [String] -> CSpec String a -> IO ()
+runShellTCP :: String -> [String] -> Spec String a -> IO ()
 runShellTCP prog bugs spec = runShellTCPS prog bugs spec ()
 
 readLineFrom :: N.Socket -> IO (Maybe String)
@@ -388,7 +388,7 @@ checkCoherence (Get p cont)  =
                                                 return False
 checkCoherence End           = return True
 
-coherentT :: (MonadTrans m, Monad (m IO)) => CSpecT m c a -> (forall a. m IO a -> IO a) -> IO ()
+coherentT :: (MonadTrans m, Monad (m IO)) => SpecT m c a -> (forall a. m IO a -> IO a) -> IO ()
 coherentT spec interp = do
                           st <- interp $ runContT (runReaderT spec []) (fmap return $ const End)
                           coherent' st 100
@@ -407,10 +407,10 @@ coherentT spec interp = do
                                     sequence_ $ map (putStrLn . ("    "++) . printTrace) (map (fmap snd) log)
                                     return ()
 
-coherentS :: CSpecS st c a -> st -> IO () 
+coherentS :: SpecS st c a -> st -> IO () 
 coherentS spec state = coherentT spec (flip S.evalStateT state)
 
-coherent :: CSpec c a -> IO ()
+coherent :: Spec c a -> IO ()
 coherent csp = coherentS csp ()
 
 -- Try to generate a value, if it is not done in 1 second, give up

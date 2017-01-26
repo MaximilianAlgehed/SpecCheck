@@ -85,7 +85,7 @@ getBasket = do
 
 bookProtocol :: CSpecS ShoppingState ErlType ()
 bookProtocol = do
-  bug "bug_003" (return ()) (modify $ \st -> st {price = price st + 2}) -- We are having some serious bug issues at the moment
+  bug "bug_003" (return ()) (modify $ \st -> st {price = price st + 2})
   forever $ do
     action <- choose ["finish", "buy", "basket", "remove", "search"]
     case action of
@@ -97,7 +97,7 @@ bookProtocol = do
 
 main :: IO ()
 main = do
-  let bugs = ["bug_001", "bug_002", "bug_003", "bug_004", "bug_005"]
+  let bugs = ["bug_001", "bug_002", "bug_003", "bug_004", "bug_005"] \\ ["bug_003"]
   coherentS bookProtocol initialShoppingState
   ph <- spawnCommand "erl -sname erl > /dev/null"
   threadDelay 2000000

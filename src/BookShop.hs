@@ -6,12 +6,12 @@ import CSpec
 import Predicate
 
 {- An example of buying books from amazon with monads -}
-bookShop :: CSpecS [Int] ErlType ()
+bookShop :: SpecS [Int] ErlType ()
 bookShop = loop
 
-loop :: CSpecS [Int] ErlType ()
+loop :: SpecS [Int] ErlType ()
 loop = do
-  b <- send wildcard
+  b <- send anything 
   modify $ \books -> b:books
 
   choice <- choose ["another", "request"]
@@ -19,7 +19,7 @@ loop = do
     "another" -> loop
     "request" -> request
             
-request :: CSpecS [Int] ErlType ()
+request :: SpecS [Int] ErlType ()
 request = do
   books <- state
   get $ permutationOf books

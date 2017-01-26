@@ -19,24 +19,24 @@ data ST m c where
   Nop    :: (() -> m IO (ST m c)) -> ST m c
   End    :: ST m c
 
-type CSpec t r     = forall m. (Monad (m IO), MonadTrans m) => CSpecT m t r
-type CSpecS st t r = CSpecT (S.StateT st) t r
-type CSpecT m t r  = ReaderT [String] (ContT  (ST m t) (m IO)) r
+type Spec t r     = forall m. (Monad (m IO), MonadTrans m) => SpecT m t r
+type SpecS st t r = SpecT (S.StateT st) t r
+type SpecT m t r  = ReaderT [String] (ContT  (ST m t) (m IO)) r
 
-send :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
+send :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> SpecT m t a
 send p = lift $ ContT $ fmap return (Send p)
 
-get :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> CSpecT m t a
+get :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a) => Predicate a -> SpecT m t a
 get p = lift $ ContT $ fmap return (Get p)
 
-stop :: (MonadTrans m, Monad (m IO))  => CSpecT m t a
+stop :: (MonadTrans m, Monad (m IO))  => SpecT m t a
 stop = lift $ ContT $ fmap return (const End)
 
-nop :: (MonadTrans m, Monad (m IO)) => CSpecT m t ()
+nop :: (MonadTrans m, Monad (m IO)) => SpecT m t ()
 nop = lift $ ContT $ fmap return Nop
 
 -- Declare what to do in the case of a bug
-bug :: String -> CSpecT m t r -> CSpecT m t r -> CSpecT m t r
+bug :: String -> SpecT m t r -> SpecT m t r -> SpecT m t r
 bug b nonBuggy buggy = do
   bugs <- ask
   if b `elem` bugs then
@@ -44,25 +44,25 @@ bug b nonBuggy buggy = do
   else
     nonBuggy
 
-choose :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
+choose :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> SpecT m t a
 choose = send . from
 
-chooseFreq :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [(Int, a)] -> CSpecT m t a
+chooseFreq :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [(Int, a)] -> SpecT m t a
 chooseFreq = send . fromFreq
 
-branch :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> CSpecT m t a
+branch :: (MonadTrans m, Monad (m IO), a :<: t, Show a, Arbitrary a, NFData a, Eq a) => [a] -> SpecT m t a
 branch = get . from
 
-state :: CSpecS st t st
+state :: SpecS st t st
 state = nop >> (lift $ lift S.get)
 
-modify :: (st -> st) -> CSpecS st t ()
+modify :: (st -> st) -> SpecS st t ()
 modify fun = nop >> (lift $ lift $ S.modify fun)
 
-store :: st -> CSpecS st t ()
+store :: st -> SpecS st t ()
 store st = nop >> (lift $ lift $ S.put st)
 
-dual :: (Functor (m IO)) => CSpecT m t a -> CSpecT m t a
+dual :: (Functor (m IO)) => SpecT m t a -> SpecT m t a
 dual = mapReaderT (mapContT (fmap dualST))
 
 dualST :: (Functor (m IO)) => ST m a -> ST m a

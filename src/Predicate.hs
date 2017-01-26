@@ -77,6 +77,9 @@ inRange (l, h) = predicate ("inRange "++(show (l, h))) (arbitrary `suchThat` (\x
 wildcard :: (Arbitrary a) => Predicate a
 wildcard = Predicate arbitrary (const Nothing) "_" Nothing
 
+anything :: (Arbitrary a) => Predicate a
+anything = wildcard
+
 -- | `from xs` creates a predicate matching `\x -> elem x xs`
 -- the predicate does shrinking by removing the selected element
 -- from the list and reconsidering
