@@ -15,8 +15,8 @@
 >     "stop" -> stop
 
 There is nothing wrong with this specification.
-However, the programmer notices that their implementation of the protocol is running slowly on the receiver due to a new
-buffer having to be allocated for each new message. He or she decides to optimize the implementation by first
+However, the programmer notices that her implementation of the protocol is running slowly on the receiver due to a new
+buffer having to be allocated for each new message. She decides to optimize the implementation by first
 sending an integer representing the number of messages that will be sent.
 
 > protocol_v1 :: (Int :<: t, String :<: t) => Spec t Int
