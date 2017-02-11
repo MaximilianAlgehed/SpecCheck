@@ -102,3 +102,13 @@ instance (a :<: ErlType) => Maybe a :<: ErlType where
 instance (t :<: ErlType) => Erlang t where
     toErlang = embed
     fromErlang = fromJust . extract -- unsafe
+
+instance a :<: (Either a b) where
+  embed = Left
+
+  extract = either Just (const Nothing)
+
+instance b :<: (Either a b) where
+  embed = Right 
+
+  extract = either (const Nothing) Just
