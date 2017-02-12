@@ -5,6 +5,9 @@ import Data.List
 
 data Predicate a = Predicate {generator :: Gen a, predf :: a -> Maybe String, name :: String, shrinker :: Maybe (a -> [a])}
 
+($$) :: Predicate a -> a -> Bool
+p $$ a = predf p a == Nothing
+
 predicate :: String -> (Gen a, (a -> Bool)) -> Predicate a
 predicate s (g, p) = Predicate g (\a -> guard (not (p a)) >> return s) s Nothing
 

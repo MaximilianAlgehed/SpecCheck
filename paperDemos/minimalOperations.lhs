@@ -2,6 +2,7 @@
 > import Typeclasses
 > import Predicate
 > import Control.Monad
+> import Test.QuickCheck
 
 The minimal operations which are required in order to express the kinds of
 protocols in "incoherent.hs", "iterating.lhs", and "bookShop.hs" are the following
@@ -12,15 +13,14 @@ protocols in "incoherent.hs", "iterating.lhs", and "bookShop.hs" are the followi
 < modify :: (st -> st) -> SpecS st t ()
 < stop   :: Spec t ()
 
-Where
+Where we have two functions
 
-> type Spec = forall st. SpecS st
+< generator :: Predicate a -> Gen a
+< ($$) :: Predicate a -> a -> Bool
 
-And |SpecS st t| is a monad which fulfills
-at least the following
+We can also define |Spec t a| as
 
-< stop     >>= f     = stop
-< modify f >>= state = state >>= \st -> modify f >>= return (f a)
+> type Spec t a = forall st. SpecS st t a
 
 We also need to support the |dual| operation, with the following specification
 
