@@ -21,7 +21,7 @@ sending an integer representing the number of messages that will be sent.
 
 > protocol_v1 :: (Int :<: t, String :<: t) => Spec t Int
 > protocol_v1 = do
->   send posNum
+>   send (posNum @Int)
 >   protocol_v0
 
 Upon generating some plausible communication traces from this specification the programmer notices a problem

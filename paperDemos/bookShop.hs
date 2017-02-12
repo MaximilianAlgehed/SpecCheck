@@ -29,9 +29,11 @@ main :: IO ()
 main = do
   putStrLn "Testing coherence..."
   coherentS bookShop []
+  callCommand "erlc erlangBooks.erl"
   ph <- spawnCommand "erl -sname erl > /dev/null"
   threadDelay 2000000
   putStrLn "\nTesting protocol compliance..."
   self <- createSelf "haskell@localhost"
   runErlangS self "erlangBooks" "main" [] bookShop []
   callCommand "./kill-erlang-node.sh erl"
+  callCommand "rm erlangBooks.beam"
