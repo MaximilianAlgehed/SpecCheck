@@ -48,11 +48,23 @@ We can implement this as a GADT
 >   Return :: a -> SpecS st t a
 >   (:>>=) :: SpecS st t a -> (a -> SpecS st t b) -> SpecS st t b
 
-From which we get the monad instance for free
+From which we get the monad instance and our operations for free
 
 > instance Monad (SpecS st t) where
 >   return = Return
 >   (>>=)  = (:>>=)
+
+> send :: (a :<: t) => Predicate a -> SpecS st t a
+> send = Send
+
+> get :: (a :<: t) => Predicate a -> SpecS st t a
+> get = Get
+
+> state :: SpecS st t st
+> state = State
+
+> modify :: (st -> st) -> SpecS st t ()
+> modify = Modify
 
 And, of course, we are forced to give default instances for |Applicative| and |Functor|
 
@@ -63,7 +75,7 @@ And, of course, we are forced to give default instances for |Applicative| and |F
 > instance Functor (SpecS st t) where
 >   fmap  = (<$>)
 
-We can derive the implementation of |dual| from the specification
+We can now, trivially, derive the implementation of |dual| from the specification
 
 > dual :: SpecS st t a -> SpecS st t a
 > dual State      = State
