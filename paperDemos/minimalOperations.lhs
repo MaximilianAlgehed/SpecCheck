@@ -30,12 +30,13 @@ We can also define |Spec t a| as
 
 We also need to support the |dual| operation, with the following specification
 
-< dual (send p)   = get p
-< dual (get p)    = send p
-< dual (m >>= f)  = dual m >>= (dual . f)
-< dual (return a) = return a
 < dual state      = state 
 < dual (modify f) = modify f
+< dual (return a) = return a
+< dual (m >>= f)  = dual m >>= (dual . f)
+< dual stop       = stop
+< dual (send p)   = get p
+< dual (get p)    = send p
 
 From this we can derive several operations like
 
@@ -46,13 +47,13 @@ From this we can derive several operations like
 We can implement this as a GADT
 
 > data SpecS st t a where
->   Send   :: (a :<: t) => Predicate a -> SpecS st t a
->   Get    :: (a :<: t) => Predicate a -> SpecS st t a
 >   State  :: SpecS st t st
 >   Modify :: (st -> st) -> SpecS st t ()
->   Stop   :: SpecS st t a
 >   Return :: a -> SpecS st t a
 >   (:>>=) :: SpecS st t a -> (a -> SpecS st t b) -> SpecS st t b
+>   Stop   :: SpecS st t a
+>   Send   :: (a :<: t) => Predicate a -> SpecS st t a
+>   Get    :: (a :<: t) => Predicate a -> SpecS st t a
 
 From which we get the monad instance and our operations for free
 
@@ -87,13 +88,13 @@ We can now, trivially, derive the implementation of |dual| from the specificatio
 > dual State      = State
 > dual (Modify f) = Modify f
 > dual (Return a) = Return a
+> dual (m :>>= f) = dual m :>>= (dual . f)
 > dual Stop       = Stop
 > dual (Send p)   = Get p
 > dual (Get p)    = Send p
-> dual (m :>>= f) = dual m :>>= (dual . f)
 
 As we are interested in using our specifications for testing applications which communicate
-using a bi-directional, full duplex, channel we make use of the |Chan| type [1]  to
+using a bi-directional, full duplex, channel we make use of the |Chan| type [1] to
 introduce the following type for bi-directional channels
 
 > type BiChan a = (Chan a, Chan a)
@@ -117,6 +118,7 @@ as |IO| operations that act as a communicating party
 > execute _ State       = S.get
 > execute _ (Modify f)  = S.modify f
 > execute _ (Return a)  = return a
+> execute ch (m :>>= f) = execute ch m >>= (execute ch) . f
 > execute _ Stop        = lift $ left True
 > execute ch (Send p)   = do
 >   a <- liftIO $ generate (generator p)
@@ -130,7 +132,6 @@ as |IO| operations that act as a communicating party
 >                  return a
 >                else
 >                  lift $ left False 
-> execute ch (m :>>= f) = execute ch m >>= (execute ch) . f
 
 References:
 [1] "Concurrent Haskell", S. Peyton Jones et. al, 1996
