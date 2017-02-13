@@ -7,6 +7,7 @@
 > import Control.Monad
 > import Control.Monad.Trans
 > import Control.Monad.Trans.Either
+> import qualified Control.Monad.Trans.State as S
 > import Control.Concurrent
 
 The minimal operations which are required in order to express the kinds of
@@ -112,26 +113,24 @@ introduce the following type for bi-directional channels
 Now that we have the plumbing in place we are ready to define an interpretation of our specifications
 as |IO| operations that act as a communicating party
 
-> execute :: BiChan t -> st -> SpecS st t a -> EitherT Bool IO (a, st)
-> execute _ st State       = return (st, st)
-> execute _ st (Modify f)  = return ((), f st)
-> execute _ st (Return a)  = return (a, st)
-> execute _ _ Stop         = left True
-> execute ch st (Send p)   = do
->   a <- lift $ generate (generator p)
->   lift $ writeBiChan ch (embed a)
->   return (a, st)
-> execute ch st (Get p)    = do
->   a <- lift $ readBiChan ch
+> execute :: BiChan t -> SpecS st t a -> S.StateT st (EitherT Bool IO) a
+> execute _ State       = S.get
+> execute _ (Modify f)  = S.modify f
+> execute _ (Return a)  = return a
+> execute _ Stop        = lift $ left True
+> execute ch (Send p)   = do
+>   a <- liftIO $ generate (generator p)
+>   liftIO $ writeBiChan ch (embed a)
+>   return a
+> execute ch (Get p)    = do
+>   a <- liftIO $ readBiChan ch
 >   case extract a of
->     Nothing -> left False
+>     Nothing -> lift $ left False
 >     Just a  -> if p $$ a then
->                  return (a, st)
+>                  return a
 >                else
->                  left False 
-> execute ch st (m :>>= f) = do
->   (a, st') <- execute ch st m
->   execute ch st' (f a)
+>                  lift $ left False 
+> execute ch (m :>>= f) = execute ch m >>= (execute ch) . f
 
 References:
 [1] "Concurrent Haskell", S. Peyton Jones et. al, 1996
