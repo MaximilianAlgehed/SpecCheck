@@ -3,7 +3,6 @@
 > import Predicate
 
 > import Test.QuickCheck
-
 > import Control.Monad
 > import Control.Monad.Trans
 > import Control.Monad.Trans.Either
@@ -24,6 +23,7 @@ Where we have two functions
 < generator :: Predicate a -> Gen a
 < ($$) :: Predicate a -> a -> Bool
 
+Where the equation |(p $$) <$> (generator p) = return True| holds.
 We can also define |Spec t a| as
 
 > type Spec t a = forall st. SpecS st t a
@@ -101,9 +101,6 @@ introduce the following type for bi-directional channels
 
 > newBiChan :: IO (BiChan a)
 > newBiChan = (,) <$> newChan <*> newChan
-
-> swapBiChan :: BiChan a -> BiChan a
-> swapBiChan (read, write) = (write, read)
 
 > readBiChan :: BiChan a -> IO a
 > readBiChan = readChan . fst

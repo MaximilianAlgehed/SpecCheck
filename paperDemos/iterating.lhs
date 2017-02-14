@@ -4,7 +4,8 @@
 > import Predicate
 > import Typeclasses
 
-> validMessage = anything @Int
+Imagine a programmer writing a protocol which looks something
+like the following
 
 > protocol_v0 :: (Int :<: t, String :<: t) => Spec t Int
 > protocol_v0 = do
@@ -13,6 +14,8 @@
 >   case choice of
 >     "more" -> protocol_v0
 >     "stop" -> stop
+
+> validMessage = anything @Int
 
 There is nothing wrong with this specification.
 However, the programmer notices that her implementation of the protocol is running slowly on the receiver due to a new
