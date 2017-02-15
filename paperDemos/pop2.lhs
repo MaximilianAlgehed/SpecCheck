@@ -1,21 +1,14 @@
-> {-# LANGUAGE RankNTypes #-}
 > {-# LANGUAGE OverloadedStrings #-}
 > import Typeclasses
-> import Test.QuickCheck hiding (choose)
 > import ST
-> import Foreign.Erlang
 > import Predicate
 > import CSpec
-> import qualified Control.Monad.Trans.State as S
-> import Control.Monad
-> import Control.Monad.Trans
-> import Control.Monad.Trans.Cont
-> import Data.List
-> import Control.DeepSeq
-> import Data.Generics
 > import Regexish
+> import Test.QuickCheck
+> import Control.Monad
+
+We specify the possible messages as regular-ish expressions
  
-> {- The simple interpretation -}
 > helom    = "HELO " >*> word >*> " " >*> word 
 > nnnm     = "#"     >*> integer
 > cccm     = "="     >*> integer
@@ -26,6 +19,8 @@
 > greeting = "POP2 " >*> Anything
 > ackdm    = "ACKD"
 > acksm    = "ACKS"
+
+|regexP| allows us to turn a |Regexish| in to a |Predicate|
  
 > heloP     = regexP "HELO_message" helom 
 > nnnmP     = regexP "nnn"          nnnm
@@ -37,6 +32,11 @@
 > greetingP = regexP "greeting"     greeting
 > ackdP     = regexP "ackd"         ackdm
 > acksP     = regexP "acks"         acksm 
+
+There are four "states" the protocol can be in
+and it always starts out in the call state, where
+the sever sends a |greeting| message and the client may
+either |quit| or send a |helo| message.
  
 > call :: SpecS Int String ()
 > call = do
@@ -46,6 +46,10 @@
 >   transition next [
 >     (quitm,  stop),
 >     (helom,  nmbr)]
+
+The |nmbr| state is entered every time a new folder is accessed,
+either from the client sending a |helo| message (i.e. on login)
+or by using the |fold| command.
  
 > nmbr :: SpecS Int String ()
 > nmbr = do

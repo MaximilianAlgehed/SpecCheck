@@ -19,7 +19,8 @@ library
                        Typeclasses,
                        BiCh,
                        CSpec,
-                       Predicate
+                       Predicate,
+                       Regexish
   build-depends:       base >= 4.7 && < 5,
                        erlang >= 0.2,
                        QuickCheck,
@@ -28,5 +29,6 @@ library
                        deepseq,
                        process,
                        network-simple,
-                       bytestring
+                       bytestring,
+                       regex-posix
   default-language:    Haskell2010
