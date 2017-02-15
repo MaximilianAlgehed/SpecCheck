@@ -62,6 +62,11 @@ or by using the |fold| command.
 >     (quitm, stop),
 >     (readm, size next),
 >     (foldm, nmbr)]
+
+When the user starts reading messages they enter the |size| state,
+the server sends a |ccc| message containing the size of the
+current message. The client may read the message, triggering a transfer,
+entering the |xfer| state.
  
 > size :: String -> SpecS Int String ()
 > size trans = do
