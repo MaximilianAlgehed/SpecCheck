@@ -85,12 +85,17 @@ entering the |xfer| state.
 >     (foldm, nmbr),
 >     (readm, size next),
 >     (retrm, xfer sz)]
+
+ Transfering happens in the |xfer| state and is simply a matter of sending a message
+ of the correct size.
  
 > xfer :: Int -> SpecS Int String ()
 > xfer sz = do
 >   get $ predicate ("hasSize "++(show sz)) (replicateM sz arbitrary, \xs -> length (xs :: String) == sz)
 >   ack <- send $ ackdP ||| acksP
 >   size ack
- 
+
+The document RFC937 is mostly summarised by this protocol.
+
 > rfc :: SpecS Int String ()
 > rfc = call
