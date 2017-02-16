@@ -97,5 +97,5 @@ entering the |xfer| state.
 
 The document RFC937 is mostly summarised by this protocol.
 
-> rfc :: SpecS Int String ()
-> rfc = call
+> rfc937 :: SpecS Int String ()
+> rfc937 = call

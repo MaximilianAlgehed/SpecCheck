@@ -50,7 +50,7 @@ As a sanity check our programmer checks that this version of the protocol is coh
 < ghci> coherent protocol_v2
 < passed
 
-And generates some examples of possible communications, inlcuding the following
+She also generates some examples of possible communications, inlcuding the following
 
 < ghci> exampleOf protocol_v2
 < sent 5
@@ -60,3 +60,23 @@ And generates some examples of possible communications, inlcuding the following
 < sent 12
 < sent 3
 < stop
+
+Satisfied with the result she proceedes to implement the sending process in Python and wants to test it
+using SpecCheck. She does so using the |testTCP| function
+
+< ghci> testTCP "implementation.py" (dual protocol_v2)
+< Failed after 0 tests
+< With: Timeout
+< In:
+< ---
+<   sent 3
+<   sent 1
+<   sent -5
+< ---
+< ~~~~ After shrinking
+< ---
+<   sent 1
+< ---
+
+It is immidiately clear that the implementation suffers from an "off-by-one" error (common when programming in
+filthy imperative languages)!

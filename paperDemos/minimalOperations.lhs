@@ -115,6 +115,9 @@ introduce the following type for bi-directional channels
 > writeBiChan :: BiChan a -> a -> IO ()
 > writeBiChan = writeChan . snd
 
+> flipChan :: BiChan a -> BiChan a
+> flipChan (a, b) = (b, a)
+
 Now that we have the plumbing in place we are ready to define an interpretation of our specifications
 as |IO| operations that act as a communicating party
 
@@ -136,6 +139,36 @@ as |IO| operations that act as a communicating party
 >                  return a
 >                else
 >                  lift $ left False
+
+Implementing |exampleOf| is now a simple case of running two processes in parallel!
+
+> exampleOf :: (Show t) => st -> SpecS st t a -> IO ()
+> exampleOf st spec = do
+>   c1 <- newBiChan
+>   c2 <- newBiChan
+>   forkIO $ void $ (runEitherT . flip S.evalStateT st) $ execute c1 spec
+>   forkIO $ void $ (runEitherT . flip S.evalStateT st) $ execute c2 (dual spec)
+>   loop (flipChan c1) (flipChan c2)
+>   where
+>     loop c1 c2 = do
+>       b <- not <$> isEmptyChan (fst c1)
+>       if b then
+>         do
+>           v <- readBiChan c1
+>           putStrLn $ "sent " ++ show v
+>           writeBiChan c2 v
+>           loop c1 c2
+>       else
+>         do
+>           b1 <- not <$> isEmptyChan (fst c2)
+>           if b1 then
+>             do
+>               v <- readBiChan c2
+>               putStrLn $ "got " ++ show v
+>               writeBiChan c1 v
+>               loop c1 c2           
+>           else
+>             loop c1 c2
 
 References:
 [1] "Concurrent Haskell", S. Peyton Jones et. al, 1996
