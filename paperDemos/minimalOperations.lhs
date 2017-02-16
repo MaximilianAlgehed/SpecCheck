@@ -18,7 +18,12 @@ protocols in "incoherent.hs", "iterating.lhs", "pop2.lhs", and "bookShop.hs" are
 < modify :: (st -> st) -> SpecS st t ()
 < stop   :: Spec t ()
 
-Where we have two functions
+Where at least the following equations hold, up to observational equivalence
+
+< stop >>= f         = stop
+< modfiy f >>= state = state >>= \s -> modify f >> return (f s)
+
+For the |Predicate| type we have two functions
 
 < generator :: Predicate a -> Gen a
 < ($$) :: Predicate a -> a -> Bool
@@ -28,6 +33,7 @@ We can also define |Spec t a| as
 
 > type Spec t a = forall st. SpecS st t a
 
+In order to allow for more succinct type signatures where permissable.
 We also need to support the |dual| operation, with the following specification
 
 < dual state      = state 
@@ -43,8 +49,9 @@ From this we can derive several operations like
 < put    :: st -> SpecS st t ()
 < choose :: (Eq a, a :<: t) => [a] -> Spec t a
 < branch :: (Eq a, a :<: t) => [a] -> Spec t a
+< takeTurns :: Spec t a -> Spec t a
 
-We can implement this as a GADT
+We can implement all this as a GADT
 
 > data SpecS st t a where
 >   State  :: SpecS st t st
