@@ -1,4 +1,5 @@
 > {-# LANGUAGE TypeApplications, TypeOperators, FlexibleContexts #-}
+> module Iterating where
 > import ST
 > import CSpec
 > import Predicate
