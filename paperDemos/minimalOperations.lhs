@@ -10,7 +10,7 @@
 > import Control.Concurrent
 
 The minimal operations which are required in order to express the kinds of
-protocols in "incoherent.hs", "iterating.lhs", and "bookShop.hs" are the following
+protocols in "incoherent.hs", "iterating.lhs", "pop2.lhs", and "bookShop.hs" are the following
 
 < send   :: (a :<: t) => Predicate a -> Spec t a
 < get    :: (a :<: t) => Predicate a -> Spec t a
@@ -73,7 +73,7 @@ From which we get the monad instance and our operations for free
 > modify :: (st -> st) -> SpecS st t ()
 > modify = Modify
 
-And, of course, we are forced to give default instances for |Applicative| and |Functor|
+And, of course, we are forced to give the default instances for |Applicative| and |Functor|
 
 > instance Applicative (SpecS st t) where
 >   pure  = return
@@ -128,7 +128,7 @@ as |IO| operations that act as a communicating party
 >     Just a  -> if p $$ a then
 >                  return a
 >                else
->                  lift $ left False 
+>                  lift $ left False
 
 References:
 [1] "Concurrent Haskell", S. Peyton Jones et. al, 1996
