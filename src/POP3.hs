@@ -15,6 +15,11 @@ import Control.DeepSeq
 import Data.Generics
 import Regexish
 
+{- TODO:
+ -   * Keep track of deleted messages
+ -   * Limit the integers to some sane range
+ -}
+
 {- POP3 -}
 okay     = regexP "okay"     $ "+OK" >*> possibly (" " >*> Anything)
 nokay    = regexP "nokay"    $ "-ERR" >*> possibly (" " >*> Anything)
